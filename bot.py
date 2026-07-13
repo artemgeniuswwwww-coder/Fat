@@ -10,14 +10,20 @@ app = Flask(__name__)
 
 # ====== 1. БЕСПЛАТНЫЙ ChatGPT ======
 def ask_free_ai(prompt):
-    url = "https://api.air13.xyz/v1/chat/completions"
+    url = "https://api.pawan.krd/v1/chat/completions"
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    
     data = {
         "model": "gpt-3.5-turbo",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 500
     }
+    
     try:
-        response = requests.post(url, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return f"❌ Ошибка {response.status_code}"
