@@ -4,44 +4,95 @@ import os
 import time
 import threading
 from flask import Flask, request
-from googlesearch import search
 
 TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
+YANDEX_KEY = 'AQVN2jkFEhOY-aSEW3DbBaKjh6YcIv_ynkC5x87K'
+HF_TOKEN = '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'
+
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# ========== 1. GPT ЧЕРЕЗ 3 БЕСПЛАТНЫХ ПРОКСИ ==========
-PROXIES = [
-    "https://api.pawan.krd/v1/chat/completions",
-    "https://api.openai-proxy.com/v1/chat/completions",
-    "https://api.air13.xyz/v1/chat/completions"
-]
+# Счётчик запросов к Яндексу
+yandex_count = 0
+YANDEX_LIMIT = 1000
 
-def ask_free_ai(prompt):
-    for proxy in PROXIES:
-        try:
-            data = {
-                "model": "gpt-3.5-turbo",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 500,
-                "temperature": 0.7
-            }
-            
-            response = requests.post(proxy, json=data, timeout=15)
-            
-            if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
-            else:
-                print(f"❌ {proxy} вернул {response.status_code}")
-                continue
-                
-        except Exception as e:
-            print(f"⚠️ Прокси {proxy} упал: {e}")
-            continue
+# ==============================================
+# 1. YANDEX GPT
+# ==============================================
+def ask_yandex(prompt):
+    global yandex_count
     
-    return "😅 Все прокси временно недоступны. Попробуй через минуту."
+    if yandex_count >= YANDEX_LIMIT:
+        return None
+    
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    headers = {
+        "Authorization": f"Api-Key {YANDEX_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "modelUri": "gpt://latest/yandexgpt",
+        "completionOptions": {
+            "temperature": 0.6,
+            "maxTokens": 500
+        },
+        "messages": [{"role": "user", "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи. Вопрос: {prompt}"}]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            yandex_count += 1
+            return response.json()["result"]["alternatives"][0]["message"]["text"]
+        return None
+    except:
+        return None
 
-# ========== 2. ГЕНЕРАЦИЯ КАРТИНОК ==========
+# ==============================================
+# 2. HUGGING FACE
+# ==============================================
+def ask_huggingface(prompt):
+    url = "https://api-inference.huggingface.co/models/google/flan-t5-large"
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "inputs": f"Ответь на русском языке кратко и дружелюбно: {prompt}",
+        "parameters": {
+            "max_length": 200,
+            "temperature": 0.7
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=60)
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                return result[0].get("generated_text", "😅 Не удалось получить ответ")
+            return str(result)
+        return f"❌ Ошибка HF: {response.status_code}"
+    except:
+        return "😅 Ошибка соединения с Hugging Face"
+
+# ==============================================
+# 3. УНИВЕРСАЛЬНЫЙ ВЫЗОВ
+# ==============================================
+def ask_ai(prompt):
+    # Сначала пробуем Yandex
+    answer = ask_yandex(prompt)
+    if answer:
+        return answer
+    
+    # Если Yandex не ответил — Hugging Face
+    return ask_huggingface(prompt)
+
+# ==============================================
+# 4. ГЕНЕРАЦИЯ КАРТИНОК
+# ==============================================
 def generate_image(prompt):
     try:
         url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512"
@@ -54,26 +105,27 @@ def generate_image(prompt):
     except:
         return None
 
-# ========== 3. ПОИСК В ИНТЕРНЕТЕ ==========
-def search_internet(query):
-    try:
-        results = []
-        for url in search(query, num_results=3):
-            results.append(f"🔗 {url}")
-        return "\n".join(results) if results else "❌ Ничего не найдено"
-    except:
-        return "😅 Ошибка поиска"
-
-# ========== 4. КОМАНДЫ БОТА ==========
+# ==============================================
+# 5. КОМАНДЫ БОТА
+# ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
         "👋 Привет! Я **Смайл** 🤖\n\n"
         "🎨 **Нарисуй** [описание] – создам картинку\n"
-        "🔍 **Найди** [запрос] – поищу в интернете\n"
-        "💬 **Просто напиши** вопрос – я отвечу\n\n"
-        "⚡ Все функции бесплатны!",
+        "💬 **Просто напиши** вопрос – отвечу через Yandex или Hugging Face\n\n"
+        f"⚡ Осталось запросов к Yandex: {YANDEX_LIMIT - yandex_count}",
+        parse_mode='Markdown'
+    )
+
+@bot.message_handler(commands=['stats'])
+def stats(message):
+    bot.reply_to(
+        message,
+        f"📊 **Статистика:**\n\n"
+        f"✅ Yandex использовано: {yandex_count} / {YANDEX_LIMIT}\n"
+        f"🔄 После лимита включится Hugging Face",
         parse_mode='Markdown'
     )
 
@@ -82,7 +134,7 @@ def handle_message(message):
     text = message.text
     text_lower = text.lower()
 
-    # Генерация картинки
+    # === КАРТИНКА ===
     if text_lower.startswith('нарисуй') or text_lower.startswith('сгенерируй'):
         prompt = text[7:].strip()
         if not prompt:
@@ -98,33 +150,17 @@ def handle_message(message):
             os.remove(image_path)
             bot.delete_message(message.chat.id, status.id)
         else:
-            bot.edit_message_text("😅 Не удалось сгенерировать картинку.", message.chat.id, status.id)
+            bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
-    # Поиск в интернете
-    if 'найди' in text_lower or 'поищи' in text_lower:
-        query = text.replace('найди', '').replace('поищи', '').strip()
-        if not query:
-            bot.reply_to(message, "📝 Напиши, что найти!")
-            return
-        
-        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
-        search_results = search_internet(query)
-        
-        if "Ошибка" not in search_results:
-            response = ask_free_ai(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
-        else:
-            response = ask_free_ai(f"Вопрос: {query}")
-        
-        bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
-        return
-
-    # Обычный ответ
+    # === ОБЫЧНЫЙ ОТВЕТ ===
     status = bot.reply_to(message, "🤔 Думаю...")
-    response = ask_free_ai(text)
+    response = ask_ai(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
-# ========== 5. ЗАПУСК ==========
+# ==============================================
+# 6. ЗАПУСК
+# ==============================================
 if __name__ == '__main__':
     def run_bot():
         while True:
