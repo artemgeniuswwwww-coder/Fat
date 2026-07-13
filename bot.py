@@ -5,26 +5,17 @@ import time
 import threading
 from flask import Flask, request
 
-# ТОКЕНЫ
-TOKEN = os.getenv('BOT_TOKEN')
-GEMINI_KEY = os.getenv('GEMINI_KEY')
+TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
+GEMINI_KEY = 'AQ.Ab8RN6JJzEAFFt8IvzQ2ou_z1ADHRXte2hF3cJPzObXHYjhYwg'
 
-if not TOKEN or not GEMINI_KEY:
-    print("❌ ОШИБКА: Токены не найдены!")
-    exit(1)
-
-# НАСТРОЙКА
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-print(f"✅ Бот запущен!")
-
-# КОМАНДЫ БОТА
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "👋 Привет! Я Смайл! Напиши что-нибудь.")
+    bot.reply_to(message, "👋 Привет! Я Смайл!")
 
 @bot.message_handler(func=lambda msg: True)
 def reply(message):
@@ -32,9 +23,8 @@ def reply(message):
         response = model.generate_content(f"Ты — Смайл, дружелюбный помощник. Ответь: {message.text}")
         bot.reply_to(message, response.text[:1000])
     except Exception as e:
-        bot.reply_to(message, f"😅 Ошибка: {e}")
+        bot.reply_to(message, f"Ошибка: {e}")
 
-# ВЕБ-СЕРВЕР ДЛЯ RENDER
 @app.route('/')
 def index():
     return "🤖 Бот Смайл работает!"
@@ -47,23 +37,18 @@ def webhook():
     except:
         return "Error", 400
 
-# ЗАПУСК БОТА В ФОНЕ
 def run_bot():
     while True:
         try:
             bot.remove_webhook()
             bot.polling(none_stop=True, interval=1, timeout=30)
         except Exception as e:
-            print(f"⚠️ Ошибка бота: {e}")
+            print(f"Ошибка: {e}")
             time.sleep(5)
 
-# ЗАПУСК
 if __name__ == '__main__':
-    # Запускаем бота в отдельном потоке
     thread = threading.Thread(target=run_bot)
     thread.daemon = True
     thread.start()
-    
-    # Запускаем веб-сервер
-    port = int(os.getenv('PORT', 10000))
+    port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
