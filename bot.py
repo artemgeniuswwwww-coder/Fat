@@ -1,59 +1,45 @@
 import telebot
 import google.generativeai as genai
+import os
 import time
 import threading
 from flask import Flask, request
 
-# ========== ТОКЕНЫ (ВАШИ) ==========
-TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
-GEMINI_KEY = 'AQ.Ab8RN6JJzEAFFt8IvzQ2ou_z1ADHRXte2hF3cJPzObXHYjhYwg'
+# ТОКЕНЫ
+TOKEN = os.getenv('BOT_TOKEN')
+GEMINI_KEY = os.getenv('GEMINI_KEY')
 
-# ========== НАСТРОЙКА GEMINI ==========
+if not TOKEN or not GEMINI_KEY:
+    print("❌ ОШИБКА: Токены не найдены!")
+    exit(1)
+
+# НАСТРОЙКА
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
-
-# ========== НАСТРОЙКА БОТА ==========
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# ========== КОМАНДЫ БОТА ==========
+print(f"✅ Бот запущен!")
+
+# КОМАНДЫ БОТА
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(
-        message,
-        "👋 Привет! Я **Смайл** — твой ИИ-друг!\n\n"
-        "💬 Просто напиши мне что угодно!",
-        parse_mode='Markdown'
-    )
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    bot.reply_to(
-        message,
-        "📖 Просто напиши текст — я отвечу!\n"
-        "🔄 /start — приветствие\n"
-        "ℹ️ /help — помощь",
-        parse_mode='Markdown'
-    )
+    bot.reply_to(message, "👋 Привет! Я Смайл! Напиши что-нибудь.")
 
 @bot.message_handler(func=lambda msg: True)
-def reply_to_all(message):
+def reply(message):
     try:
-        # Отправляем запрос в Gemini
-        response = model.generate_content(
-            f"Ты — Смайл 😊, дружелюбный помощник. Ответь на вопрос: {message.text}"
-        )
-        # Отправляем ответ (ограничиваем 1000 символов)
+        response = model.generate_content(f"Ты — Смайл, дружелюбный помощник. Ответь: {message.text}")
         bot.reply_to(message, response.text[:1000])
     except Exception as e:
-        bot.reply_to(message, f"😅 Ошибка: {str(e)[:100]}")
+        bot.reply_to(message, f"😅 Ошибка: {e}")
 
-# ========== ВЕБ-СЕРВЕР ДЛЯ RENDER ==========
+# ВЕБ-СЕРВЕР ДЛЯ RENDER
 @app.route('/')
 def index():
     return "🤖 Бот Смайл работает!"
 
-@app.route('/' + TOKEN, methods=['POST'])
+@app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
     try:
         bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode('utf-8'))])
@@ -61,20 +47,23 @@ def webhook():
     except:
         return "Error", 400
 
-# ========== ЗАПУСК ==========
-if __name__ == '__main__':
-    # Запускаем бота в фоновом режиме
-    def run_bot():
+# ЗАПУСК БОТА В ФОНЕ
+def run_bot():
+    while True:
         try:
             bot.remove_webhook()
             bot.polling(none_stop=True, interval=1, timeout=30)
         except Exception as e:
-            print(f"Ошибка бота: {e}")
-    
+            print(f"⚠️ Ошибка бота: {e}")
+            time.sleep(5)
+
+# ЗАПУСК
+if __name__ == '__main__':
+    # Запускаем бота в отдельном потоке
     thread = threading.Thread(target=run_bot)
     thread.daemon = True
     thread.start()
     
     # Запускаем веб-сервер
-    port = int(os.environ.get('PORT', 10000))
+    port = int(os.getenv('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
