@@ -1,110 +1,149 @@
 import telebot
 import requests
-import json
 import os
 import time
-import threading
-from flask import Flask, request
+import json
+from googlesearch import search
+import yt_dlp
 
-# ========== ТОКЕНЫ ==========
-TOKEN = os.getenv('BOT_TOKEN', '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU')
-GEMINI_KEY = os.getenv('GEMINI_KEY', 'AQ.Ab8RN6I-YuXgfVn_knf_37z6qVc6k76Th...')  # ВАШ КЛЮЧ
+# ==================== ТОКЕНЫ ====================
+# ВАШИ ДАННЫЕ (уже вставлены)
+TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
+DEEPSEEK_KEY = 'sk-2e34591f3fbd430b8e1d4cc642955fbf'
 
-# ========== НАСТРОЙКА ==========
+# ==================== НАСТРОЙКА БОТА ====================
 bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
 
-# ФУНКЦИЯ ЗАПРОСА К GEMINI ЧЕРЕЗ REST API
-def ask_gemini(prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-    
+# ==================== 1. ГЕНЕРАЦИЯ КАРТИНОК ====================
+def generate_image(prompt):
+    try:
+        url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512"
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            with open('image.jpg', 'wb') as f:
+                f.write(response.content)
+            return 'image.jpg'
+        return None
+    except Exception as e:
+        print(f"Ошибка генерации: {e}")
+        return None
+
+# ==================== 2. ПОИСК В ИНТЕРНЕТЕ ====================
+def search_internet(query):
+    try:
+        results = []
+        for url in search(query, num_results=3, advanced=True):
+            results.append(f"🔗 {url.title}\n{url.description}\n{url.url}\n")
+        return "\n".join(results) if results else "❌ Ничего не найдено"
+    except Exception as e:
+        return f"😅 Ошибка поиска: {e}"
+
+# ==================== 3. АНАЛИЗ ВИДЕО ====================
+def analyze_video(video_url):
+    try:
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+        
+        result = f"""
+📹 **Информация о видео:**
+
+🎬 **Название:** {info.get('title', 'Неизвестно')}
+👤 **Автор:** {info.get('uploader', 'Неизвестно')}
+⏱️ **Длительность:** {info.get('duration', 0) // 60} мин {info.get('duration', 0) % 60} сек
+👁️ **Просмотров:** {info.get('view_count', 0):,}
+"""
+        # Анализ через DeepSeek
+        analysis = ask_deepseek(
+            f"Проанализируй это видео. Название: {info.get('title')}. Автор: {info.get('uploader')}. Напиши краткий анализ: о чём видео, какая тема."
+        )
+        return result + f"\n\n🤖 **Анализ от Смайла:**\n{analysis}"
+    except Exception as e:
+        return f"😅 Ошибка анализа: {e}"
+
+# ==================== 4. ОТВЕТЫ ЧЕРЕЗ DEEPSEEK ====================
+def ask_deepseek(prompt):
+    url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
+        "Authorization": f"Bearer {DEEPSEEK_KEY}",
         "Content-Type": "application/json"
     }
-    
     data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "Ты — Смайл 😊, дружелюбный ИИ-помощник. Отвечай кратко, с эмодзи, на русском языке."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 800,
+        "temperature": 0.7
     }
-    
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            # Извлекаем текст ответа
-            text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "😅 Не удалось получить ответ")
-            return text
-        else:
-            return f"❌ Ошибка API: {response.status_code} - {response.text[:200]}"
+        response = requests.post(url, headers=headers, json=data, timeout=60)
+        return response.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"😅 Ошибка соединения: {str(e)[:100]}"
+        return f"😅 Ошибка: {e}"
 
-# ========== КОМАНДЫ БОТА ==========
+# ==================== 5. ОБРАБОТКА КОМАНД ====================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
-        "👋 Привет! Я **Смайл** — твой ИИ-помощник!\n\n"
-        "💬 Просто напиши мне что угодно!",
-        parse_mode='Markdown'
-    )
-
-@bot.message_handler(commands=['help'])
-def help_command(message):
-    bot.reply_to(
-        message,
-        "📖 **Помощь:**\n\n"
-        "💬 Напиши текст — я отвечу\n"
-        "🔄 /start — приветствие\n"
-        "ℹ️ /help — помощь",
+        "👋 Привет! Я **Смайл-Агент**! 🤖\n\n"
+        "🎨 **Нарисуй** [описание] — создам картинку\n"
+        "🔍 **Найди** [запрос] — поищу в интернете\n"
+        "📹 **Отправь ссылку** на YouTube/TikTok — проанализирую\n"
+        "💬 **Просто напиши** вопрос — я отвечу",
         parse_mode='Markdown'
     )
 
 @bot.message_handler(func=lambda msg: True)
-def reply_to_all(message):
-    try:
-        # Отправляем запрос к Gemini
-        response_text = ask_gemini(
-            f"Ты — Смайл 😊, дружелюбный и весёлый ИИ-помощник. Ответь пользователю на русском языке, кратко и по делу (до 500 символов). Вопрос: {message.text}"
-        )
-        
-        # Отправляем ответ (ограничиваем 1000 символов)
-        bot.reply_to(message, response_text[:1000])
-    except Exception as e:
-        bot.reply_to(message, f"😅 Ошибка: {str(e)[:100]}")
-
-# ========== ВЕБ-СЕРВЕР ДЛЯ RAILWAY ==========
-@app.route('/')
-def index():
-    return "🤖 Бот Смайл работает 24/7!"
-
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    try:
-        bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode('utf-8'))])
-        return "OK", 200
-    except Exception as e:
-        return f"Error: {e}", 400
-
-# ========== ЗАПУСК БОТА В ФОНЕ ==========
-def run_bot():
-    while True:
-        try:
-            bot.remove_webhook()
-            bot.polling(none_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            print(f"⚠️ Ошибка бота: {e}")
-            time.sleep(5)
-
-# ========== ЗАПУСК ==========
-if __name__ == '__main__':
-    # Запускаем бота в отдельном потоке
-    thread = threading.Thread(target=run_bot)
-    thread.daemon = True
-    thread.start()
+def handle_message(message):
+    text = message.text
+    text_lower = text.lower()
     
-    # Запускаем веб-сервер
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Генерация картинки
+    if text_lower.startswith('нарисуй') or text_lower.startswith('сгенерируй'):
+        prompt = text[7:].strip()
+        status = bot.reply_to(message, f"🎨 Рисую: *{prompt[:50]}*...", parse_mode='Markdown')
+        image_path = generate_image(prompt)
+        if image_path:
+            with open(image_path, 'rb') as f:
+                bot.send_photo(message.chat.id, f, caption=f"🖼️ {prompt}")
+            os.remove(image_path)
+            bot.delete_message(message.chat.id, status.id)
+        else:
+            bot.edit_message_text("😅 Не удалось сгенерировать картинку.", message.chat.id, status.id)
+        return
+    
+    # Анализ видео
+    if 'youtube.com' in text_lower or 'youtu.be' in text_lower:
+        status = bot.reply_to(message, "📹 Анализирую видео...")
+        analysis = analyze_video(text)
+        bot.edit_message_text(analysis, message.chat.id, status.id, parse_mode='Markdown')
+        return
+    
+    # Поиск в интернете
+    if 'найди' in text_lower or 'поищи' in text_lower:
+        query = text.replace('найди', '').replace('поищи', '').strip()
+        if not query:
+            bot.reply_to(message, "📝 Напиши, что именно найти!")
+            return
+        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
+        search_results = search_internet(query)
+        response = ask_deepseek(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
+        bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+        return
+    
+    # Обычный ответ
+    status = bot.reply_to(message, "🤔 Думаю...")
+    response = ask_deepseek(text)
+    bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+
+# ==================== ЗАПУСК ====================
+if __name__ == '__main__':
+    print("🤖 Бот Смайл-Агент запущен!")
+    bot.polling(none_stop=True)
