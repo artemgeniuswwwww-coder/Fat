@@ -4,113 +4,107 @@ import os
 import time
 import threading
 from flask import Flask, request
-import json
+from googlesearch import search
 
-# ========== ТОКЕНЫ ==========
 TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
-DEEPSEEK_KEY = 'sk-2e34591f3fbd430b8e1d4cc642955fbf'  # ВАШ КЛЮЧ
-
-# ========== НАСТРОЙКА ==========
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# ========== ФУНКЦИЯ ЗАПРОСА К DEEPSEEK (С ПРОВЕРКОЙ) ==========
-def ask_deepseek(prompt):
-    url = "https://api.deepseek.com/v1/chat/completions"
-    
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_KEY}",
-        "Content-Type": "application/json"
-    }
-    
+# ====== 1. БЕСПЛАТНЫЙ ChatGPT ======
+def ask_free_ai(prompt):
+    url = "https://api.air13.xyz/v1/chat/completions"
     data = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": "Ты — Смайл, дружелюбный помощник. Отвечай кратко."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 500,
-        "temperature": 0.7
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 500
     }
-    
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
-        
-        # ПРОВЕРЯЕМ СТАТУС ОТВЕТА
-        if response.status_code != 200:
-            error_detail = response.text
-            return f"❌ Ошибка API ({response.status_code}): {error_detail[:200]}"
-        
-        # ПРОВЕРЯЕМ СТРУКТУРУ ОТВЕТА
-        result = response.json()
-        if 'choices' not in result or len(result['choices']) == 0:
-            return f"⚠️ Странный ответ от API: {json.dumps(result, ensure_ascii=False)[:200]}"
-        
-        # ВСЁ ХОРОШО, ИЗВЛЕКАЕМ ТЕКСТ
-        return result["choices"][0]["message"]["content"]
-        
-    except requests.exceptions.Timeout:
-        return "⏰ Таймаут. Сервер DeepSeek не отвечает."
-    except Exception as e:
-        return f"😅 Ошибка соединения: {str(e)[:100]}"
+        response = requests.post(url, json=data, timeout=30)
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        return f"❌ Ошибка {response.status_code}"
+    except:
+        return "😅 Сервер временно недоступен"
 
-# ========== КОМАНДЫ БОТА ==========
+# ====== 2. ГЕНЕРАЦИЯ КАРТИНОК ======
+def generate_image(prompt):
+    try:
+        url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512"
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            with open('image.jpg', 'wb') as f:
+                f.write(response.content)
+            return 'image.jpg'
+        return None
+    except:
+        return None
+
+# ====== 3. ПОИСК В ИНТЕРНЕТЕ ======
+def search_internet(query):
+    try:
+        results = []
+        for url in search(query, num_results=3):
+            results.append(f"🔗 {url}")
+        return "\n".join(results) if results else "❌ Ничего не найдено"
+    except:
+        return "😅 Ошибка поиска"
+
+# ====== 4. КОМАНДЫ БОТА ======
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
-        "👋 Привет! Я **Смайл**!\n\n"
-        "💬 Напиши что угодно, я отвечу через DeepSeek.\n"
-        "🔄 /start — перезапустить",
+        "👋 Привет! Я **Смайл** 🤖\n\n"
+        "🎨 **Нарисуй** [описание] – создам картинку\n"
+        "🔍 **Найди** [запрос] – поищу в интернете\n"
+        "💬 **Просто напиши** вопрос – я отвечу",
         parse_mode='Markdown'
     )
 
-@bot.message_handler(commands=['test'])
-def test_deepseek(message):
-    """Тестовая команда для проверки API"""
-    status = bot.reply_to(message, "🔍 Проверяю соединение с DeepSeek...")
-    response = ask_deepseek("Ответь 'Привет' одним словом.")
-    bot.edit_message_text(f"📊 **Результат теста:**\n\n{response}", message.chat.id, status.id, parse_mode='Markdown')
-
 @bot.message_handler(func=lambda msg: True)
-def reply_to_all(message):
-    # Показываем статус "печатает"
-    bot.send_chat_action(message.chat.id, 'typing')
-    
-    try:
-        answer = ask_deepseek(message.text)
-        bot.reply_to(message, answer)
-    except Exception as e:
-        bot.reply_to(message, f"😅 Критическая ошибка: {e}")
+def handle_message(message):
+    text = message.text
+    text_lower = text.lower()
 
-# ========== ВЕБ-СЕРВЕР ==========
-@app.route('/')
-def index():
-    return "🤖 Бот Смайл работает!"
+    # Генерация картинки
+    if text_lower.startswith('нарисуй') or text_lower.startswith('сгенерируй'):
+        prompt = text[7:].strip()
+        status = bot.reply_to(message, f"🎨 Рисую: *{prompt[:50]}*...", parse_mode='Markdown')
+        image_path = generate_image(prompt)
+        if image_path:
+            with open(image_path, 'rb') as f:
+                bot.send_photo(message.chat.id, f, caption=f"🖼️ {prompt}")
+            os.remove(image_path)
+            bot.delete_message(message.chat.id, status.id)
+        else:
+            bot.edit_message_text("😅 Не удалось сгенерировать картинку.", message.chat.id, status.id)
+        return
 
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    try:
-        bot.process_new_updates([telebot.types.Update.de_json(request.stream.read().decode('utf-8'))])
-        return "OK", 200
-    except Exception as e:
-        return f"Error: {e}", 400
+    # Поиск в интернете
+    if 'найди' in text_lower or 'поищи' in text_lower:
+        query = text.replace('найди', '').replace('поищи', '').strip()
+        if not query:
+            bot.reply_to(message, "📝 Напиши, что именно найти!")
+            return
+        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
+        search_results = search_internet(query)
+        response = ask_free_ai(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
+        bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+        return
 
-# ========== ЗАПУСК БОТА В ФОНЕ ==========
-def run_bot():
-    while True:
-        try:
-            bot.remove_webhook()
-            bot.polling(none_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            print(f"⚠️ Ошибка бота: {e}")
-            time.sleep(10)
+    # Обычный ответ
+    status = bot.reply_to(message, "🤔 Думаю...")
+    response = ask_free_ai(text)
+    bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
-# ========== ЗАПУСК ==========
+# ====== 5. ЗАПУСК ======
 if __name__ == '__main__':
+    def run_bot():
+        bot.polling(none_stop=True)
+    
     thread = threading.Thread(target=run_bot)
     thread.daemon = True
     thread.start()
-    print("🚀 Бот Смайл запущен!")
+
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
