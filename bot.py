@@ -7,7 +7,6 @@ from googlesearch import search
 import yt_dlp
 
 # ==================== ТОКЕНЫ ====================
-# ВАШИ ДАННЫЕ (уже вставлены)
 TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
 DEEPSEEK_KEY = 'sk-2e34591f3fbd430b8e1d4cc642955fbf'
 
@@ -32,8 +31,8 @@ def generate_image(prompt):
 def search_internet(query):
     try:
         results = []
-        for url in search(query, num_results=3, advanced=True):
-            results.append(f"🔗 {url.title}\n{url.description}\n{url.url}\n")
+        for url in search(query, num_results=3):
+            results.append(f"🔗 {url}")
         return "\n".join(results) if results else "❌ Ничего не найдено"
     except Exception as e:
         return f"😅 Ошибка поиска: {e}"
@@ -55,15 +54,13 @@ def analyze_video(video_url):
 🎬 **Название:** {info.get('title', 'Неизвестно')}
 👤 **Автор:** {info.get('uploader', 'Неизвестно')}
 ⏱️ **Длительность:** {info.get('duration', 0) // 60} мин {info.get('duration', 0) % 60} сек
-👁️ **Просмотров:** {info.get('view_count', 0):,}
 """
-        # Анализ через DeepSeek
         analysis = ask_deepseek(
-            f"Проанализируй это видео. Название: {info.get('title')}. Автор: {info.get('uploader')}. Напиши краткий анализ: о чём видео, какая тема."
+            f"Проанализируй это видео. Название: {info.get('title')}. Автор: {info.get('uploader')}. Напиши краткий анализ."
         )
-        return result + f"\n\n🤖 **Анализ от Смайла:**\n{analysis}"
+        return result + f"\n\n🤖 **Анализ:**\n{analysis}"
     except Exception as e:
-        return f"😅 Ошибка анализа: {e}"
+        return f"😅 Ошибка: {e}"
 
 # ==================== 4. ОТВЕТЫ ЧЕРЕЗ DEEPSEEK ====================
 def ask_deepseek(prompt):
@@ -75,7 +72,7 @@ def ask_deepseek(prompt):
     data = {
         "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": "Ты — Смайл 😊, дружелюбный ИИ-помощник. Отвечай кратко, с эмодзи, на русском языке."},
+            {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи."},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": 800,
@@ -87,16 +84,16 @@ def ask_deepseek(prompt):
     except Exception as e:
         return f"😅 Ошибка: {e}"
 
-# ==================== 5. ОБРАБОТКА КОМАНД ====================
+# ==================== 5. КОМАНДЫ ====================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
         "👋 Привет! Я **Смайл-Агент**! 🤖\n\n"
-        "🎨 **Нарисуй** [описание] — создам картинку\n"
-        "🔍 **Найди** [запрос] — поищу в интернете\n"
-        "📹 **Отправь ссылку** на YouTube/TikTok — проанализирую\n"
-        "💬 **Просто напиши** вопрос — я отвечу",
+        "🎨 **Нарисуй** [описание]\n"
+        "🔍 **Найди** [запрос]\n"
+        "📹 **Ссылка** на YouTube\n"
+        "💬 **Текст** — просто вопрос",
         parse_mode='Markdown'
     )
 
@@ -108,7 +105,7 @@ def handle_message(message):
     # Генерация картинки
     if text_lower.startswith('нарисуй') or text_lower.startswith('сгенерируй'):
         prompt = text[7:].strip()
-        status = bot.reply_to(message, f"🎨 Рисую: *{prompt[:50]}*...", parse_mode='Markdown')
+        status = bot.reply_to(message, f"🎨 Рисую...")
         image_path = generate_image(prompt)
         if image_path:
             with open(image_path, 'rb') as f:
@@ -116,25 +113,25 @@ def handle_message(message):
             os.remove(image_path)
             bot.delete_message(message.chat.id, status.id)
         else:
-            bot.edit_message_text("😅 Не удалось сгенерировать картинку.", message.chat.id, status.id)
+            bot.edit_message_text("😅 Не удалось.", message.chat.id, status.id)
         return
     
     # Анализ видео
     if 'youtube.com' in text_lower or 'youtu.be' in text_lower:
-        status = bot.reply_to(message, "📹 Анализирую видео...")
+        status = bot.reply_to(message, "📹 Анализирую...")
         analysis = analyze_video(text)
         bot.edit_message_text(analysis, message.chat.id, status.id, parse_mode='Markdown')
         return
     
-    # Поиск в интернете
+    # Поиск
     if 'найди' in text_lower or 'поищи' in text_lower:
         query = text.replace('найди', '').replace('поищи', '').strip()
         if not query:
-            bot.reply_to(message, "📝 Напиши, что именно найти!")
+            bot.reply_to(message, "📝 Что найти?")
             return
-        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
+        status = bot.reply_to(message, f"🔍 Ищу...")
         search_results = search_internet(query)
-        response = ask_deepseek(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
+        response = ask_deepseek(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь.")
         bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
         return
     
@@ -145,5 +142,5 @@ def handle_message(message):
 
 # ==================== ЗАПУСК ====================
 if __name__ == '__main__':
-    print("🤖 Бот Смайл-Агент запущен!")
+    print("🤖 Бот Смайл запущен!")
     bot.polling(none_stop=True)
