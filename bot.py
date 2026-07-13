@@ -1,8 +1,6 @@
 import telebot
 import requests
 import os
-import time
-import threading
 from flask import Flask, request
 from googlesearch import search
 
@@ -97,21 +95,27 @@ def handle_message(message):
     response = ask_free_ai(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
-# ====== 5. ЗАПУСК ======
-if __name__ == '__main__':
-    # Запускаем бота в отдельном потоке
-    def run_bot():
-        while True:
-            try:
-                bot.polling(none_stop=True, interval=1, timeout=30)
-            except Exception as e:
-                print(f"Ошибка бота: {e}")
-                time.sleep(5)
-    
-    thread = threading.Thread(target=run_bot)
-    thread.daemon = True
-    thread.start()
+# ====== 5. ВЕБХУК (ВМЕСТО POLLING) ======
+@app.route('/')
+def index():
+    return "🤖 Бот Смайл работает!"
 
-    # Запускаем веб-сервер для Render
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    try:
+        update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
+        bot.process_new_updates([update])
+        return "OK", 200
+    except Exception as e:
+        return f"Error: {e}", 400
+
+# ====== 6. ЗАПУСК ======
+if __name__ == '__main__':
+    # Удаляем старый вебхук и ставим новый
+    bot.remove_webhook()
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
+    bot.set_webhook(url=webhook_url)
+    print(f"✅ Вебхук установлен: {webhook_url}")
+    
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
