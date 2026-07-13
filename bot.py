@@ -99,12 +99,19 @@ def handle_message(message):
 
 # ====== 5. ЗАПУСК ======
 if __name__ == '__main__':
+    # Запускаем бота в отдельном потоке
     def run_bot():
-        bot.polling(none_stop=True)
+        while True:
+            try:
+                bot.polling(none_stop=True, interval=1, timeout=30)
+            except Exception as e:
+                print(f"Ошибка бота: {e}")
+                time.sleep(5)
     
     thread = threading.Thread(target=run_bot)
     thread.daemon = True
     thread.start()
 
+    # Запускаем веб-сервер для Render
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
