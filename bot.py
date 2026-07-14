@@ -2,61 +2,42 @@ import telebot
 import requests
 import os
 import time
-import random
 from flask import Flask, request
-from googlesearch import search
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-HF_TOKEN = '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'  # ВСТАВЬ СЮДА НОВЫЙ ТОКЕН
+GROQ_KEY = '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'  # ВСТАВЬ СЮДА КЛЮЧ
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. HUGGING FACE С НОВЫМ ТОКЕНОМ
+# 1. GROQ
 # ==============================================
-def ask_huggingface(prompt):
-    # Используем лёгкую модель
-    url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
-    
+def ask_groq(prompt):
+    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
+        "Authorization": f"Bearer {GROQ_KEY}",
         "Content-Type": "application/json"
     }
-    
     data = {
-        "inputs": f"User: {prompt}\nBot:",
-        "parameters": {
-            "max_length": 100,
-            "temperature": 0.8,
-            "top_p": 0.9
-        }
+        "model": "mixtral-8x7b-32768",
+        "messages": [
+            {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
     }
-    
     try:
-        # Добавляем задержку, чтобы не перегружать
-        time.sleep(1)
-        
-        response = requests.post(url, headers=headers, json=data, timeout=60)
-        
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            result = response.json()
-            if isinstance(result, list) and len(result) > 0:
-                answer = result[0].get("generated_text", "")
-                # Очищаем ответ
-                if "Bot:" in answer:
-                    answer = answer.split("Bot:")[-1].strip()
-                elif "User:" in answer:
-                    answer = answer.split("User:")[0].strip()
-                return answer if answer else "😊 Понял! А что ещё?"
-            return "😊 Я тут!"
-        else:
-            return f"⏳ Много запросов, попробуй через 10 секунд. (Код: {response.status_code})"
+            return response.json()["choices"][0]["message"]["content"]
+        return f"❌ Ошибка: {response.status_code}"
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 2. ГЕНЕРАЦИЯ КАРТИНОК
+# 2. КАРТИНКИ
 # ==============================================
 def generate_image(prompt):
     try:
@@ -71,19 +52,7 @@ def generate_image(prompt):
         return None
 
 # ==============================================
-# 3. ПОИСК В ИНТЕРНЕТЕ
-# ==============================================
-def search_internet(query):
-    try:
-        results = []
-        for url in search(query, num_results=3):
-            results.append(f"🔗 {url}")
-        return "\n".join(results) if results else "❌ Ничего не найдено"
-    except Exception as e:
-        return f"😅 Ошибка поиска: {e}"
-
-# ==============================================
-# 4. КОМАНДЫ БОТА
+# 3. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -91,9 +60,8 @@ def start(message):
         message,
         "👋 Привет! Я **Смайл** 🤖\n\n"
         "🎨 **Нарисуй** [описание] – картинка\n"
-        "🔍 **Найди** [запрос] – поиск в интернете\n"
-        "💬 **Просто напиши** вопрос – отвечу через Hugging Face\n\n"
-        "⚡ Бесплатно, без лимитов!",
+        "💬 **Просто напиши** вопрос – отвечу через Groq\n\n"
+        "⚡ Мгновенно!",
         parse_mode='Markdown'
     )
 
@@ -121,31 +89,13 @@ def handle_message(message):
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
-    # === ПОИСК ===
-    if 'найди' in text_lower or 'поищи' in text_lower:
-        query = text.replace('найди', '').replace('поищи', '').strip()
-        if not query:
-            bot.reply_to(message, "📝 Что найти?")
-            return
-        
-        status = bot.reply_to(message, f"🔍 Ищу...")
-        search_results = search_internet(query)
-        
-        if "Ошибка" not in search_results:
-            response = ask_huggingface(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
-        else:
-            response = ask_huggingface(f"Вопрос: {query}")
-        
-        bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
-        return
-
     # === ОБЫЧНЫЙ ОТВЕТ ===
     status = bot.reply_to(message, "🤔 Думаю...")
-    response = ask_huggingface(text)
+    response = ask_groq(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
-# 5. WEBHOOK
+# 4. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -158,10 +108,10 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает!"
+    return "🤖 Бот Смайл работает на Groq!"
 
 # ==============================================
-# 6. ЗАПУСК
+# 5. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
