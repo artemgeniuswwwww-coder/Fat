@@ -6,9 +6,6 @@ import random
 import time
 from flask import Flask, request
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import yt_dlp  # Для скачивания видео
-from pydub import AudioSegment  # Для конвертации аудио
-import speech_recognition as sr  # Для распознавания речи
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 MISTRAL_KEY = 'zgWg7QFAdA9NMlPjL04lwruEj1NS1NvP'
@@ -17,7 +14,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. MISTRAL (ОСНОВНОЙ ИИ)
+# 1. MISTRAL
 # ==============================================
 def ask_mistral(prompt):
     url = "https://api.mistral.ai/v1/chat/completions"
@@ -43,47 +40,14 @@ def ask_mistral(prompt):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 2. ТЕКСТ → ГОЛОС (БЕТА)
-# ==============================================
-def text_to_speech(text):
-    try:
-        # Используем бесплатный TTS (например, от Google или Yandex)
-        url = f"https://api.voicerss.org/?key=ВАШ_API_КЛЮЧ&hl=ru-ru&src={text[:200]}"
-        # Временно используем заглушку (т.к. без ключа TTS не работает)
-        # Чтобы не вешать бота, возвращаем None
-        return None
-    except:
-        return None
-
-# ==============================================
-# 3. АНАЛИЗ КАРТИНОК (БЕТА)
-# ==============================================
-def analyze_image(file_path):
-    try:
-        # Простая заглушка для анализа (в реальности нужно использовать OCR или нейросеть)
-        return "🖼️ На картинке: что-то интересное (анализ в разработке)"
-    except:
-        return "❌ Не удалось проанализировать изображение"
-
-# ==============================================
-# 4. АНАЛИЗ ВИДЕО (БЕТА)
-# ==============================================
-def analyze_video(file_path):
-    try:
-        # Заглушка для видео
-        return "🎬 Видео: анализ в бета-версии"
-    except:
-        return "❌ Не удалось проанализировать видео"
-
-# ==============================================
-# 5. ГЕНЕРАЦИЯ КАРТИНОК
+# 2. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
     clean_prompt = clean_prompt.strip()
     if not clean_prompt:
         clean_prompt = "красивый пейзаж"
-    styles = ["реалистичный", "акварельный", "в стиле импрессионизм", "фэнтези", "киберпанк", "графика"]
+    styles = ["реалистичный", "акварельный", "фэнтези", "киберпанк"]
     style = random.choice(styles)
     full_prompt = f"{clean_prompt}, {style}, высокое качество"
     seed = random.randint(1, 999999)
@@ -99,7 +63,7 @@ def generate_image(prompt):
         return None, None
 
 # ==============================================
-# 6. КОМАНДЫ
+# 3. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -110,7 +74,6 @@ def start(message):
         "🎨 **Нарисуй** [описание] — картинка\n"
         "🖼️ **Отправь фото** — анализ (бета)\n"
         "🎬 **Отправь видео** — анализ (бета)\n"
-        "🔊 **Голосовые ответы** — кнопка под сообщением (бета)\n"
         "ℹ️ **/info** — обо мне",
         parse_mode='Markdown'
     )
@@ -122,50 +85,26 @@ def info(message):
         "🤖 **Смайл** — ИИ-помощник\n\n"
         "🧠 **Mistral** — основной ИИ\n"
         "🎨 **Pollinations.ai** — генерация картинок\n"
-        "🔊 **TTS** — голосовые ответы (бета)\n"
-        "🖼️ **Анализ фото и видео** (бета)\n\n"
         "⚡ Бесплатно и безлимитно",
         parse_mode='Markdown'
     )
 
 # ==============================================
-# 7. ОБРАБОТКА ФОТО И ВИДЕО (БЕТА)
+# 4. ОБРАБОТКА ФОТО (ЗАГЛУШКА)
 # ==============================================
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
-    user_name = message.from_user.first_name or "пользователь"
-    try:
-        file_id = message.photo[-1].file_id
-        file_info = bot.get_file(file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        with open('image.jpg', 'wb') as f:
-            f.write(downloaded_file)
-        
-        # Заглушка анализа
-        analysis = analyze_image('image.jpg')
-        bot.reply_to(message, f"🖼️ **Анализ фото (бета):**\n{analysis}", parse_mode='Markdown')
-        os.remove('image.jpg')
-    except Exception as e:
-        bot.reply_to(message, f"😅 Ошибка: {e}")
-
-@bot.message_handler(content_types=['video'])
-def handle_video(message):
-    user_name = message.from_user.first_name or "пользователь"
-    try:
-        file_id = message.video.file_id
-        file_info = bot.get_file(file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        with open('video.mp4', 'wb') as f:
-            f.write(downloaded_file)
-        
-        analysis = analyze_video('video.mp4')
-        bot.reply_to(message, f"🎬 **Анализ видео (бета):**\n{analysis}", parse_mode='Markdown')
-        os.remove('video.mp4')
-    except Exception as e:
-        bot.reply_to(message, f"😅 Ошибка: {e}")
+    bot.reply_to(message, "🖼️ Фото получено! Анализ пока в разработке (бета)")
 
 # ==============================================
-# 8. ОСНОВНАЯ ОБРАБОТКА ТЕКСТА
+# 5. ОБРАБОТКА ВИДЕО (ЗАГЛУШКА)
+# ==============================================
+@bot.message_handler(content_types=['video'])
+def handle_video(message):
+    bot.reply_to(message, "🎬 Видео получено! Анализ пока в разработке (бета)")
+
+# ==============================================
+# 6. ОСНОВНАЯ ОБРАБОТКА ТЕКСТА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -202,28 +141,10 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     status = bot.reply_to(message, f"🤔 Размышляю, **{user_name}**...")
     response = ask_mistral(text)
-    
-    # === ГОЛОСОВАЯ КНОПКА (БЕТА) ===
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔊 Озвучить (бета)", callback_data=f"tts_{status.message_id}"))
-    
-    bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown', reply_markup=markup)
+    bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
-# 9. ОБРАБОТКА КНОПКИ "ОЗВУЧИТЬ"
-# ==============================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith('tts_'))
-def handle_tts(call):
-    try:
-        message_id = int(call.data.split('_')[1])
-        text = call.message.text
-        # Заглушка TTS
-        bot.answer_callback_query(call.id, "🔊 TTS пока в разработке, но я уже работаю над этим!")
-    except Exception as e:
-        bot.answer_callback_query(call.id, f"Ошибка: {e}")
-
-# ==============================================
-# 10. WEBHOOK
+# 7. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -239,7 +160,7 @@ def index():
     return "🤖 Бот Смайл работает!"
 
 # ==============================================
-# 11. ЗАПУСК
+# 8. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()

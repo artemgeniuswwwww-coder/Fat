@@ -1,6 +1,3 @@
 pyTelegramBotAPI
 requests
 flask
-yt-dlp
-pydub
-speech_recognition
