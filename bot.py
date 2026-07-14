@@ -11,13 +11,13 @@ from PIL import Image
 from io import BytesIO
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-GEMINI_KEY = 'AQ.Ab8RN6JmrcObSDOcarlZ54R6q0USkuV6iqg-Z2MaDjS0JvhulQ'
+GEMINI_KEY = 'AQ.Ab8RN6LqlboqnT9V2o8dNx-EvwmpYGjBd1GvwVAx4Bt7uGKoDA'
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. ИСТОРИЯ
+# 1. ИСТОРИЯ ДИАЛОГА
 # ==============================================
 user_history = {}
 
@@ -37,7 +37,7 @@ def clear_history(user_id):
 def get_full_context(user_id):
     history = get_history(user_id)
     context = ""
-    for msg in history:
+    for msg in history[-10:]:  # Последние 10 сообщений для контекста
         if msg["role"] == "user":
             context += f"Пользователь: {msg['content']}\n"
         else:
@@ -45,7 +45,7 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. GEMINI
+# 2. GEMINI (КЛЮЧ AQ)
 # ==============================================
 def ask_gemini(prompt, generate_image=False):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
@@ -90,7 +90,7 @@ def ask_gemini(prompt, generate_image=False):
         return None
 
 # ==============================================
-# 3. ГЕНЕРАЦИЯ КАРТИНКИ
+# 3. ГЕНЕРАЦИЯ КАРТИНКИ (GEMINI)
 # ==============================================
 def generate_image_gemini(prompt):
     result = ask_gemini(prompt, generate_image=True)
@@ -115,7 +115,7 @@ def generate_image_gemini(prompt):
     return None
 
 # ==============================================
-# 4. ОСНОВНОЙ ОТВЕТ (РАСКРЕПОЩЁННЫЙ)
+# 4. ОСНОВНОЙ ОТВЕТ GEMINI
 # ==============================================
 def get_gemini_response(user_id, prompt, search_data=None):
     context = get_full_context(user_id)
@@ -145,10 +145,10 @@ def get_gemini_response(user_id, prompt, search_data=None):
     result = ask_gemini(full_prompt, generate_image=False)
     if result and 'candidates' in result:
         return result['candidates'][0]['content']['parts'][0]['text']
-    return "😅 Ошибка: не удалось получить ответ"
+    return "😅 Ошибка: не удалось получить ответ от Gemini"
 
 # ==============================================
-# 5. ПОИСК
+# 5. ПОИСК В ИНТЕРНЕТЕ (DUCKDUCKGO)
 # ==============================================
 def search_internet(query):
     try:
@@ -170,7 +170,7 @@ def search_internet(query):
         return None
 
 # ==============================================
-# 6. ДЛИННЫЕ СООБЩЕНИЯ
+# 6. ОТПРАВКА ДЛИННЫХ СООБЩЕНИЙ
 # ==============================================
 def send_long_message(chat_id, text):
     if len(text) <= 4096:
@@ -180,7 +180,7 @@ def send_long_message(chat_id, text):
             bot.send_message(chat_id, text[i:i+4096], parse_mode='Markdown')
 
 # ==============================================
-# 7. КОМАНДЫ (НЕЙТРАЛЬНЫЕ)
+# 7. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -213,7 +213,7 @@ def clear_chat(message):
     bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 8. ОБРАБОТКА
+# 8. ОСНОВНАЯ ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
