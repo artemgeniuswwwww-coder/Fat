@@ -20,7 +20,7 @@ def ask_groq(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama-3.1-70b-versatile",  # НОВАЯ МОДЕЛЬ
+        "model": "gemma2-9b-it",  # НОВАЯ МОДЕЛЬ
         "messages": [
             {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском."},
             {"role": "user", "content": prompt}
