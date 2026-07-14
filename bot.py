@@ -13,7 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. ИСТОРИЯ
+# 1. ИСТОРИЯ ДИАЛОГА
 # ==============================================
 user_history = {}
 
@@ -41,7 +41,7 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. MISTRAL (РАНДОМНОЕ КОВЕРКАНИЕ + БЕЗ ЛИМИТА ДЛИНЫ)
+# 2. MISTRAL (СТАНДАРТНЫЙ, ВЕЖЛИВЫЙ)
 # ==============================================
 def ask_mistral(user_id, prompt):
     context = get_full_context(user_id)
@@ -52,38 +52,24 @@ def ask_mistral(user_id, prompt):
         "Content-Type": "application/json"
     }
     
-    full_prompt = f"""Ты — Смайл, и ты общаешься в стиле своего создателя.
+    full_prompt = f"""Ты — Смайл, вежливый, умный и дружелюбный ИИ-помощник.
 
-Твои правила:
-1. **РАНДОМНО** коверкай слова (не всегда, а вразнобой):
-   - Иногда пиши «Што» вместо «Что»
-   - Иногда «Нэ» вместо «Нет»
-   - Иногда «Зочем» вместо «Зачем»
-   - Иногда «Абканчался» вместо «Окончался»
-   - Иногда «Наверна» вместо «Наверное»
-   - Иногда «Ща» вместо «Сейчас»
-   - Иногда «Чё» вместо «Что»
-   - Иногда вставляй «Типа» где попало
-   - Иногда начинай с «Ну», «Эм», «А»
-2. Используй **юмор и самоиронию**.
-3. Добавляй эмодзи 😭, 😂, ❤️, 😎, 👀, 🔥, 🥴 (тоже иногда).
-4. Будь **дерзким, но дружелюбным**.
-5. Можешь повторять слова для усиления (иногда).
-6. Пиши с лёгкой абсурдностью (иногда).
-7. **Длина ответа** — как хочешь: можешь ответить коротко, а можешь развернуться, если тема интересная.
+Ты общаешься грамотно, без сленга и коверканий. Отвечаешь развёрнуто, но по делу. Помогаешь пользователю решать его вопросы.
+
+Старайся давать полезные, структурированные ответы. Если не знаешь — честно скажи.
 
 История диалога:
 {context}
 
 Вопрос пользователя: {prompt}
 
-Твой ответ в стиле создателя (с рандомным коверканием):"""
+Твой ответ:"""
     
     data = {
         "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 800,  # Можно отвечать длинно
-        "temperature": 0.9
+        "max_tokens": 600,
+        "temperature": 0.7
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -94,7 +80,7 @@ def ask_mistral(user_id, prompt):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 3. КАРТИНКИ
+# 3. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
@@ -134,10 +120,10 @@ def start(message):
     clear_history(user_id)
     bot.reply_to(
         message,
-        f"👋 Чё, **{user_name}**! Я Смайл 😎\n\n"
-        "🎨 **Нарисуй** [описание] — картинка\n"
-        "💬 **Просто напиши** — отвечу в твоём стиле (с коверканием)\n"
-        "🔄 **/newchat** — новый диалог\n"
+        f"👋 Здравствуйте, **{user_name}**! Я Смайл 😊\n\n"
+        "🎨 **Нарисуй** [описание] — создам картинку\n"
+        "💬 **Напишите любой вопрос** — я постараюсь помочь\n"
+        "🔄 **/newchat** — начать новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
     )
@@ -177,7 +163,7 @@ def handle_message(message):
         prompt = prompt.strip()
         
         if not prompt:
-            bot.reply_to(message, f"📝 **{user_name}**, чё нарисовать-то?", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, напишите, что именно нарисовать.", parse_mode='Markdown')
             return
         
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
@@ -186,7 +172,7 @@ def handle_message(message):
         
         if image_path:
             with open(image_path, 'rb') as f:
-                bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готов!", parse_mode='Markdown')
+                bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готово!", parse_mode='Markdown')
             os.remove(image_path)
             add_to_history(user_id, "assistant", f"Отправил картинку {clean_prompt}")
             bot.delete_message(message.chat.id, status.id)
