@@ -5,34 +5,38 @@ import time
 from flask import Flask, request
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-GROQ_KEY = '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'  # ВСТАВЬ КЛЮЧ
+QWEN_KEY = 'sk-ws-H.XHIDDP.Oq2b.MEUCIQC-SAYI77dOL2V7sryEy4qqiG2EumN2Paq2ex7MDs_yZAIgKWZXLhtH4MmeV_T6b5tnXYn25qZvFaDrt7HhubJc7FE'  # ВСТАВЬ КЛЮЧ ИЗ ALIBABA
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. GROQ (LLAMA 3.1)
+# 1. QWEN (1 МЛН ТОКЕНОВ/МЕС)
 # ==============================================
-def ask_groq(prompt):
-    url = "https://api.groq.com/openai/v1/chat/completions"
+def ask_qwen(prompt):
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
     headers = {
-        "Authorization": f"Bearer {GROQ_KEY}",
+        "Authorization": f"Bearer {QWEN_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "gemma2-9b-it",  # НОВАЯ МОДЕЛЬ
-        "messages": [
-            {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 500,
-        "temperature": 0.7
+        "model": "qwen-turbo",
+        "input": {
+            "messages": [
+                {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском языке."},
+                {"role": "user", "content": prompt}
+            ]
+        },
+        "parameters": {
+            "max_tokens": 500,
+            "temperature": 0.7
+        }
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        return f"❌ Ошибка: {response.status_code}"
+            return response.json()["output"]["text"]
+        return f"❌ Ошибка Qwen: {response.status_code} - {response.text[:100]}"
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
@@ -60,8 +64,8 @@ def start(message):
         message,
         "👋 Привет! Я **Смайл** 🤖\n\n"
         "🎨 **Нарисуй** [описание] – картинка\n"
-        "💬 **Просто напиши** вопрос – отвечу через Llama 3.1\n\n"
-        "⚡ Мгновенно!",
+        "💬 **Просто напиши** вопрос – отвечу через Qwen\n\n"
+       
         parse_mode='Markdown'
     )
 
@@ -91,7 +95,7 @@ def handle_message(message):
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
     status = bot.reply_to(message, "🤔 Думаю...")
-    response = ask_groq(text)
+    response = ask_qwen(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
@@ -108,7 +112,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Llama 3.1!"
+    return "🤖 Бот Смайл работает на Qwen!"
 
 # ==============================================
 # 5. ЗАПУСК
