@@ -2,42 +2,50 @@ import telebot
 import requests
 import os
 import time
+import random
 from flask import Flask, request
 from googlesearch import search
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-HF_TOKEN = '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'  # ТВОЙ ТОКЕН
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. HUGGING FACE С ТОКЕНОМ
+# 1. HUGGING FACE (С ЗАДЕРЖКОЙ)
 # ==============================================
 def ask_huggingface(prompt):
-    url = "https://api-inference.huggingface.co/models/google/flan-t5-large"
-    
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    # Используем лёгкую модель
+    url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
     
     data = {
-        "inputs": f"Ответь на русском языке кратко и дружелюбно: {prompt}",
+        "inputs": f"User: {prompt}\nBot:",
         "parameters": {
-            "max_length": 200,
-            "temperature": 0.7
+            "max_length": 100,
+            "temperature": 0.8,
+            "top_p": 0.9
         }
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=60)
+        # Добавляем задержку, чтобы не перегружать
+        time.sleep(2)
+        
+        response = requests.post(url, json=data, timeout=60)
+        
         if response.status_code == 200:
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
-                return result[0].get("generated_text", "😅 Не удалось получить ответ")
-            return str(result)
-        return f"❌ Ошибка HF: {response.status_code}"
+                answer = result[0].get("generated_text", "")
+                # Очищаем ответ от "User:" и "Bot:"
+                if "Bot:" in answer:
+                    answer = answer.split("Bot:")[-1].strip()
+                elif "User:" in answer:
+                    answer = answer.split("User:")[0].strip()
+                return answer if answer else "😊 Понял! А что ещё?"
+            return "😊 Я тут!"
+        else:
+            return "⏳ Много запросов, попробуй через 10 секунд."
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
