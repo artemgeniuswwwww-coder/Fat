@@ -6,15 +6,18 @@ import random
 import time
 from flask import Flask, request
 from duckduckgo_search import DDGS
+import base64
+from PIL import Image
+from io import BytesIO
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-MISTRAL_KEY = 'zgWg7QFAdA9NMlPjL04lwruEj1NS1NvP'
+GEMINI_KEY = 'AQ.Ab8RN6JNRta0C-k5PdhtcnhtpVUucuOteCMiK0YASwEnL5-k7Q'
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. ИСТОРИЯ ДИАЛОГА
+# 1. ИСТОРИЯ
 # ==============================================
 user_history = {}
 
@@ -42,7 +45,110 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. ПОИСК В ИНТЕРНЕТЕ
+# 2. GEMINI
+# ==============================================
+def ask_gemini(prompt, generate_image=False):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+    
+    headers = {"Content-Type": "application/json"}
+    
+    if generate_image:
+        data = {
+            "contents": [{
+                "parts": [{"text": f"Нарисуй: {prompt}"}]
+            }],
+            "generationConfig": {
+                "temperature": 0.7,
+                "candidateCount": 1,
+                "imageGeneration": {
+                    "numberOfImages": 1,
+                    "aspectRatio": "1:1"
+                }
+            }
+        }
+    else:
+        data = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.9,
+                "maxOutputTokens": 800,
+                "topP": 0.95
+            }
+        }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=60)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Gemini ошибка: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Gemini ошибка: {e}")
+        return None
+
+# ==============================================
+# 3. ГЕНЕРАЦИЯ КАРТИНКИ
+# ==============================================
+def generate_image_gemini(prompt):
+    result = ask_gemini(prompt, generate_image=True)
+    if result and 'candidates' in result:
+        try:
+            if 'inlineData' in result['candidates'][0]['content']['parts'][0]:
+                image_data = result['candidates'][0]['content']['parts'][0]['inlineData']['data']
+                image_bytes = base64.b64decode(image_data)
+                with open('image.jpg', 'wb') as f:
+                    f.write(image_bytes)
+                return 'image.jpg'
+            elif 'imageUrl' in result['candidates'][0]['content']['parts'][0]:
+                url = result['candidates'][0]['content']['parts'][0]['imageUrl']
+                response = requests.get(url)
+                if response.status_code == 200:
+                    with open('image.jpg', 'wb') as f:
+                        f.write(response.content)
+                    return 'image.jpg'
+        except Exception as e:
+            print(f"Ошибка извлечения картинки: {e}")
+            return None
+    return None
+
+# ==============================================
+# 4. ОСНОВНОЙ ОТВЕТ (РАСКРЕПОЩЁННЫЙ)
+# ==============================================
+def get_gemini_response(user_id, prompt, search_data=None):
+    context = get_full_context(user_id)
+    
+    if search_data:
+        full_prompt = f"""Ты — Смайл, живой, остроумный и раскрепощённый ИИ. Отвечай легко, с юмором, без лишних рамок. Будь откровенным, но не грубым.
+
+История диалога:
+{context}
+
+Данные из интернета:
+{search_data}
+
+Вопрос пользователя: {prompt}
+
+Ответ:"""
+    else:
+        full_prompt = f"""Ты — Смайл, живой, остроумный и раскрепощённый ИИ. Отвечай легко, с юмором, без лишних рамок. Будь откровенным, но не грубым.
+
+История диалога:
+{context}
+
+Вопрос пользователя: {prompt}
+
+Ответ:"""
+    
+    result = ask_gemini(full_prompt, generate_image=False)
+    if result and 'candidates' in result:
+        return result['candidates'][0]['content']['parts'][0]['text']
+    return "😅 Ошибка: не удалось получить ответ"
+
+# ==============================================
+# 5. ПОИСК
 # ==============================================
 def search_internet(query):
     try:
@@ -64,86 +170,7 @@ def search_internet(query):
         return None
 
 # ==============================================
-# 3. MISTRAL (7-8 ПРЕДЛОЖЕНИЙ)
-# ==============================================
-def ask_mistral(user_id, prompt, search_data=None):
-    context = get_full_context(user_id)
-    
-    url = "https://api.mistral.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {MISTRAL_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    if search_data:
-        full_prompt = f"""Ты — Смайл. Отвечай развернуто, но без воды.
-
-Правила:
-1. Отвечай ровно на 7–8 предложений.
-2. Используй информацию из поиска, если она есть.
-3. Пиши по делу, без лишних отступлений.
-
-Данные из интернета:
-{search_data}
-
-Вопрос пользователя: {prompt}
-
-Ответ (7–8 предложений):"""
-    else:
-        full_prompt = f"""Ты — Смайл. Отвечай развернуто, но без воды.
-
-Правила:
-1. Отвечай ровно на 7–8 предложений.
-2. Только суть, без воды.
-3. Если не знаешь — скажи честно.
-
-История диалога:
-{context}
-
-Вопрос пользователя: {prompt}
-
-Ответ (7–8 предложений):"""
-    
-    data = {
-        "model": "mistral-small-latest",
-        "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 600,
-        "temperature": 0.7
-    }
-    try:
-        response = requests.post(url, headers=headers, json=data, timeout=50)
-        if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
-        return f"❌ Ошибка: {response.status_code}"
-    except Exception as e:
-        return f"😅 Ошибка: {str(e)[:100]}"
-
-# ==============================================
-# 4. ГЕНЕРАЦИЯ КАРТИНОК
-# ==============================================
-def generate_image(prompt):
-    clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
-    clean_prompt = clean_prompt.strip()
-    if not clean_prompt:
-        clean_prompt = "красивый пейзаж"
-    
-    styles = ["photorealistic, 8k, highly detailed", "realistic, cinematic lighting"]
-    style = random.choice(styles)
-    seed = random.randint(1, 999999)
-    url = f"https://image.pollinations.ai/prompt/{clean_prompt.replace(' ', '%20')}, {style}?width=1024&height=1024&seed={seed}"
-    
-    try:
-        response = requests.get(url, timeout=60)
-        if response.status_code == 200:
-            with open('image.jpg', 'wb') as f:
-                f.write(response.content)
-            return 'image.jpg', clean_prompt
-        return None, None
-    except:
-        return None, None
-
-# ==============================================
-# 5. ОТПРАВКА СООБЩЕНИЙ
+# 6. ДЛИННЫЕ СООБЩЕНИЯ
 # ==============================================
 def send_long_message(chat_id, text):
     if len(text) <= 4096:
@@ -153,7 +180,7 @@ def send_long_message(chat_id, text):
             bot.send_message(chat_id, text[i:i+4096], parse_mode='Markdown')
 
 # ==============================================
-# 6. КОМАНДЫ
+# 7. КОМАНДЫ (НЕЙТРАЛЬНЫЕ)
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -165,7 +192,7 @@ def start(message):
         f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
         "🎨 **Нарисуй** [описание] — картинка\n"
         "🔍 **Найди** [запрос] — поиск в интернете\n"
-        "💬 **Просто напиши** вопрос — отвечу на 7–8 предложений\n"
+        "💬 **Просто напиши** вопрос — я отвечу\n"
         "🔄 **/newchat** — новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
@@ -186,7 +213,7 @@ def clear_chat(message):
     bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 7. ОСНОВНАЯ ОБРАБОТКА
+# 8. ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -210,14 +237,14 @@ def handle_message(message):
             return
         
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
-        status = bot.reply_to(message, f"🎨 Создаю...")
-        image_path, clean_prompt = generate_image(prompt)
+        status = bot.reply_to(message, f"🎨 Рисую...")
         
+        image_path = generate_image_gemini(prompt)
         if image_path:
             with open(image_path, 'rb') as f:
-                bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готово!")
+                bot.send_photo(message.chat.id, f, caption=f"🎨 *{prompt.capitalize()}* готово!")
             os.remove(image_path)
-            add_to_history(user_id, "assistant", f"Отправил картинку {clean_prompt}")
+            add_to_history(user_id, "assistant", f"Отправил картинку {prompt}")
             bot.delete_message(message.chat.id, status.id)
         else:
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
@@ -239,7 +266,7 @@ def handle_message(message):
         
         if search_results:
             add_to_history(user_id, "user", f"Поиск: {query}")
-            response = ask_mistral(user_id, f"Информация из интернета:\n{search_results}", search_data=search_results)
+            response = get_gemini_response(user_id, f"Информация из интернета:\n{search_results}", search_data=search_results)
             add_to_history(user_id, "assistant", response)
             bot.delete_message(message.chat.id, status.id)
             send_long_message(message.chat.id, response)
@@ -250,13 +277,13 @@ def handle_message(message):
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_mistral(user_id, text)
+    response = get_gemini_response(user_id, text)
     add_to_history(user_id, "assistant", response)
     bot.delete_message(message.chat.id, status.id)
     send_long_message(message.chat.id, response)
 
 # ==============================================
-# 8. WEBHOOK
+# 9. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -269,10 +296,10 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает!"
+    return "🤖 Бот Смайл работает на Gemini!"
 
 # ==============================================
-# 9. ЗАПУСК
+# 10. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
