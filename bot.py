@@ -4,14 +4,17 @@ import os
 import time
 from googlesearch import search
 
-TOKEN = '8719783774:AAHp4nEoQxqM23xpU8ppmEq9OeiVbpfCljU'
+# ===================================================
+# ТВОЙ НОВЫЙ ТОКЕН (УЖЕ ВСТАВЛЕН)
+# ===================================================
+TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 YANDEX_KEY = 'AQVN2jkFEhOY-aSEW3DbBaKjh6YcIv_ynkC5x87K'
 
 bot = telebot.TeleBot(TOKEN)
 
-# ==============================================
-# YANDEX GPT
-# ==============================================
+# ===================================================
+# 1. ОСНОВНОЙ ИИ — YANDEX GPT
+# ===================================================
 def ask_yandex(prompt):
     url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
     headers = {
@@ -25,7 +28,10 @@ def ask_yandex(prompt):
             "temperature": 0.8,
             "maxTokens": 800
         },
-        "messages": [{"role": "user", "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи. Вопрос: {prompt}"}]
+        "messages": [{
+            "role": "user",
+            "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском. Вопрос: {prompt}"
+        }]
     }
     
     try:
@@ -36,9 +42,9 @@ def ask_yandex(prompt):
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
-# ==============================================
-# ГЕНЕРАЦИЯ КАРТИНОК
-# ==============================================
+# ===================================================
+# 2. ГЕНЕРАЦИЯ КАРТИНКИ
+# ===================================================
 def generate_image(prompt):
     try:
         url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512"
@@ -51,9 +57,9 @@ def generate_image(prompt):
     except:
         return None
 
-# ==============================================
-# ПОИСК В ИНТЕРНЕТЕ
-# ==============================================
+# ===================================================
+# 3. ПОИСК В ИНТЕРНЕТЕ
+# ===================================================
 def search_internet(query):
     try:
         results = []
@@ -63,9 +69,9 @@ def search_internet(query):
     except Exception as e:
         return f"😅 Ошибка поиска: {e}"
 
-# ==============================================
-# КОМАНДЫ БОТА
-# ==============================================
+# ===================================================
+# 4. КОМАНДЫ БОТА
+# ===================================================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
@@ -124,8 +130,9 @@ def handle_message(message):
     response = ask_yandex(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
-# ==============================================
-# ЗАПУСК
-# ==============================================
-print("🚀 Бот Смайл запущен!")
-bot.polling(none_stop=True)
+# ===================================================
+# 5. ЗАПУСК
+# ===================================================
+if __name__ == "__main__":
+    print("🚀 Бот Смайл запущен!")
+    bot.polling(none_stop=True)
