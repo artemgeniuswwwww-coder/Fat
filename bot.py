@@ -7,16 +7,22 @@ from flask import Flask, request
 from googlesearch import search
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
+HF_TOKEN = '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'  # ВСТАВЬ СЮДА НОВЫЙ ТОКЕН
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. HUGGING FACE (С ЗАДЕРЖКОЙ)
+# 1. HUGGING FACE С НОВЫМ ТОКЕНОМ
 # ==============================================
 def ask_huggingface(prompt):
     # Используем лёгкую модель
     url = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
+    
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
+    }
     
     data = {
         "inputs": f"User: {prompt}\nBot:",
@@ -29,15 +35,15 @@ def ask_huggingface(prompt):
     
     try:
         # Добавляем задержку, чтобы не перегружать
-        time.sleep(2)
+        time.sleep(1)
         
-        response = requests.post(url, json=data, timeout=60)
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         
         if response.status_code == 200:
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
                 answer = result[0].get("generated_text", "")
-                # Очищаем ответ от "User:" и "Bot:"
+                # Очищаем ответ
                 if "Bot:" in answer:
                     answer = answer.split("Bot:")[-1].strip()
                 elif "User:" in answer:
@@ -45,7 +51,7 @@ def ask_huggingface(prompt):
                 return answer if answer else "😊 Понял! А что ещё?"
             return "😊 Я тут!"
         else:
-            return "⏳ Много запросов, попробуй через 10 секунд."
+            return f"⏳ Много запросов, попробуй через 10 секунд. (Код: {response.status_code})"
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
