@@ -11,7 +11,7 @@ from PIL import Image
 from io import BytesIO
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-GEMINI_KEY = 'AQ.Ab8RN6JNRta0C-k5PdhtcnhtpVUucuOteCMiK0YASwEnL5-k7Q'
+GEMINI_KEY = 'AQ.Ab8RN6JmrcObSDOcarlZ54R6q0USkuV6iqg-Z2MaDjS0JvhulQ'
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
