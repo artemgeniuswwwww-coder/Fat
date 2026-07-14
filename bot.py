@@ -5,13 +5,13 @@ import time
 from flask import Flask, request
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-GROQ_KEY = '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'  # ВСТАВЬ СЮДА КЛЮЧ
+GROQ_KEY = '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'  # ВСТАВЬ КЛЮЧ
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. GROQ
+# 1. GROQ (LLAMA 3.1)
 # ==============================================
 def ask_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -20,7 +20,7 @@ def ask_groq(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "mixtral-8x7b-32768",
+        "model": "llama-3.1-70b-versatile",  # НОВАЯ МОДЕЛЬ
         "messages": [
             {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском."},
             {"role": "user", "content": prompt}
@@ -60,7 +60,7 @@ def start(message):
         message,
         "👋 Привет! Я **Смайл** 🤖\n\n"
         "🎨 **Нарисуй** [описание] – картинка\n"
-        "💬 **Просто напиши** вопрос – отвечу через Groq\n\n"
+        "💬 **Просто напиши** вопрос – отвечу через Llama 3.1\n\n"
         "⚡ Мгновенно!",
         parse_mode='Markdown'
     )
@@ -108,7 +108,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Groq!"
+    return "🤖 Бот Смайл работает на Llama 3.1!"
 
 # ==============================================
 # 5. ЗАПУСК
