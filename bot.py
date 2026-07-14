@@ -42,21 +42,29 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. ПОИСК В ИНТЕРНЕТЕ (DUCKDUCKGO)
+# 2. ПОИСК В ИНТЕРНЕТЕ (DUCKDUCKGO) — ИСПРАВЛЕН
 # ==============================================
 def search_internet(query):
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5))
+            # Ищем на русском и английском
+            results = list(ddgs.text(query, max_results=5, region='ru-ru'))
             if not results:
-                return "❌ Ничего не найдено."
+                # Пробуем без региона
+                results = list(ddgs.text(query, max_results=5))
+            if not results:
+                return None
             
             answer = "🔍 **Результаты поиска:**\n\n"
             for i, r in enumerate(results, 1):
-                answer += f"{i}. **{r['title']}**\n{r['body']}\n[Источник]({r['href']})\n\n"
+                title = r.get('title', 'Без заголовка')
+                body = r.get('body', '')
+                href = r.get('href', '')
+                answer += f"{i}. **{title}**\n{body}\n[Источник]({href})\n\n"
             return answer
     except Exception as e:
-        return f"❌ Ошибка поиска: {e}"
+        print(f"Ошибка поиска: {e}")
+        return None
 
 # ==============================================
 # 3. MISTRAL (С УЧЁТОМ ПОИСКА)
@@ -108,11 +116,11 @@ def ask_mistral(user_id, prompt, search_data=None):
     data = {
         "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 1200,
+        "max_tokens": 2000,  # Увеличен лимит
         "temperature": 0.8
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=40)
+        response = requests.post(url, headers=headers, json=data, timeout=50)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return f"❌ Ошибка: {response.status_code}"
@@ -120,7 +128,17 @@ def ask_mistral(user_id, prompt, search_data=None):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 4. ГЕНЕРАЦИЯ КАРТИНОК
+# 4. ОТПРАВКА ДЛИННЫХ СООБЩЕНИЙ
+# ==============================================
+def send_long_message(chat_id, text, parse_mode='Markdown'):
+    if len(text) <= 4096:
+        bot.send_message(chat_id, text, parse_mode=parse_mode)
+    else:
+        for i in range(0, len(text), 4096):
+            bot.send_message(chat_id, text[i:i+4096], parse_mode=parse_mode)
+
+# ==============================================
+# 5. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
@@ -151,7 +169,7 @@ def generate_image(prompt):
         return None, None
 
 # ==============================================
-# 5. КОМАНДЫ
+# 6. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -184,7 +202,7 @@ def clear_chat(message):
     bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 6. ОСНОВНАЯ ОБРАБОТКА
+# 7. ОСНОВНАЯ ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -221,7 +239,7 @@ def handle_message(message):
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
-    # === ПОИСК В ИНТЕРНЕТЕ (если начинается с "Найди") ===
+    # === ПОИСК В ИНТЕРНЕТЕ ===
     if text_lower.startswith('найди') or text_lower.startswith('поищи'):
         query = text
         for word in ['найди', 'поищи', 'найди мне', 'поищи мне']:
@@ -235,13 +253,14 @@ def handle_message(message):
         status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
         search_results = search_internet(query)
         
-        if "Ошибка" not in search_results and "Ничего не найдено" not in search_results:
+        if search_results:
             add_to_history(user_id, "user", f"Поиск: {query}")
             response = ask_mistral(user_id, f"Информация из интернета:\n{search_results}", search_data=search_results)
             add_to_history(user_id, "assistant", response)
-            bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+            bot.delete_message(message.chat.id, status.id)
+            send_long_message(message.chat.id, response)
         else:
-            bot.edit_message_text(search_results, message.chat.id, status.id, parse_mode='Markdown')
+            bot.edit_message_text("🔍 Ничего не найдено. Попробуй изменить запрос.", message.chat.id, status.id)
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
@@ -249,10 +268,11 @@ def handle_message(message):
     status = bot.reply_to(message, f"🤔 Думаю...")
     response = ask_mistral(user_id, text)
     add_to_history(user_id, "assistant", response)
-    bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+    bot.delete_message(message.chat.id, status.id)
+    send_long_message(message.chat.id, response)
 
 # ==============================================
-# 7. WEBHOOK
+# 8. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -268,7 +288,7 @@ def index():
     return "🤖 Бот Смайл работает (с поиском в интернете)!"
 
 # ==============================================
-# 8. ЗАПУСК
+# 9. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
