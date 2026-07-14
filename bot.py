@@ -2,19 +2,18 @@ import telebot
 import requests
 import os
 import time
+from flask import Flask, request
 from googlesearch import search
 
-# ===================================================
-# ТВОЙ НОВЫЙ ТОКЕН (УЖЕ ВСТАВЛЕН)
-# ===================================================
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 YANDEX_KEY = 'AQVN2jkFEhOY-aSEW3DbBaKjh6YcIv_ynkC5x87K'
 
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
-# ===================================================
-# 1. ОСНОВНОЙ ИИ — YANDEX GPT
-# ===================================================
+# ==============================================
+# YANDEX GPT
+# ==============================================
 def ask_yandex(prompt):
     url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
     headers = {
@@ -24,14 +23,8 @@ def ask_yandex(prompt):
     
     data = {
         "modelUri": "gpt://latest/yandexgpt",
-        "completionOptions": {
-            "temperature": 0.8,
-            "maxTokens": 800
-        },
-        "messages": [{
-            "role": "user",
-            "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском. Вопрос: {prompt}"
-        }]
+        "completionOptions": {"temperature": 0.8, "maxTokens": 800},
+        "messages": [{"role": "user", "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи. Вопрос: {prompt}"}]
     }
     
     try:
@@ -42,9 +35,9 @@ def ask_yandex(prompt):
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
-# ===================================================
-# 2. ГЕНЕРАЦИЯ КАРТИНКИ
-# ===================================================
+# ==============================================
+# ГЕНЕРАЦИЯ КАРТИНОК
+# ==============================================
 def generate_image(prompt):
     try:
         url = f"https://image.pollinations.ai/prompt/{prompt.replace(' ', '%20')}?width=512&height=512"
@@ -57,9 +50,9 @@ def generate_image(prompt):
     except:
         return None
 
-# ===================================================
-# 3. ПОИСК В ИНТЕРНЕТЕ
-# ===================================================
+# ==============================================
+# ПОИСК В ИНТЕРНЕТЕ
+# ==============================================
 def search_internet(query):
     try:
         results = []
@@ -69,9 +62,9 @@ def search_internet(query):
     except Exception as e:
         return f"😅 Ошибка поиска: {e}"
 
-# ===================================================
-# 4. КОМАНДЫ БОТА
-# ===================================================
+# ==============================================
+# КОМАНДЫ БОТА
+# ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
@@ -130,9 +123,34 @@ def handle_message(message):
     response = ask_yandex(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
-# ===================================================
-# 5. ЗАПУСК
-# ===================================================
-if __name__ == "__main__":
-    print("🚀 Бот Смайл запущен!")
-    bot.polling(none_stop=True)
+# ==============================================
+# WEBHOOK (ВМЕСТО POLLING)
+# ==============================================
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    try:
+        update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
+        bot.process_new_updates([update])
+        return "OK", 200
+    except Exception as e:
+        return f"Error: {e}", 400
+
+@app.route('/')
+def index():
+    return "🤖 Бот Смайл работает!"
+
+# ==============================================
+# ЗАПУСК
+# ==============================================
+if __name__ == '__main__':
+    # Удаляем старый вебхук
+    bot.remove_webhook()
+    
+    # Ставим новый вебхук
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
+    bot.set_webhook(url=webhook_url)
+    print(f"✅ Вебхук установлен: {webhook_url}")
+    
+    # Запускаем веб-сервер
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
