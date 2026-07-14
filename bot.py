@@ -5,6 +5,7 @@ import re
 import random
 import time
 from flask import Flask, request
+from duckduckgo_search import DDGS
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 MISTRAL_KEY = 'zgWg7QFAdA9NMlPjL04lwruEj1NS1NvP'
@@ -41,9 +42,26 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. MISTRAL (СТАНДАРТНЫЙ, ВЕЖЛИВЫЙ)
+# 2. ПОИСК В ИНТЕРНЕТЕ (DUCKDUCKGO)
 # ==============================================
-def ask_mistral(user_id, prompt):
+def search_internet(query):
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+            if not results:
+                return "❌ Ничего не найдено."
+            
+            answer = "🔍 **Результаты поиска:**\n\n"
+            for i, r in enumerate(results, 1):
+                answer += f"{i}. **{r['title']}**\n{r['body']}\n[Источник]({r['href']})\n\n"
+            return answer
+    except Exception as e:
+        return f"❌ Ошибка поиска: {e}"
+
+# ==============================================
+# 3. MISTRAL (С УЧЁТОМ ПОИСКА)
+# ==============================================
+def ask_mistral(user_id, prompt, search_data=None):
     context = get_full_context(user_id)
     
     url = "https://api.mistral.ai/v1/chat/completions"
@@ -52,27 +70,49 @@ def ask_mistral(user_id, prompt):
         "Content-Type": "application/json"
     }
     
-    full_prompt = f"""Ты — Смайл, вежливый, умный и дружелюбный ИИ-помощник.
+    if search_data:
+        full_prompt = f"""Ты — Смайл, эрудированный, детальный и очень разговорчивый ИИ-помощник.
 
-Ты общаешься грамотно, без сленга и коверканий. Отвечаешь развёрнуто, но по делу. Помогаешь пользователю решать его вопросы.
+Правила:
+1. Давай максимально подробные ответы — минимум 5–7 предложений, а лучше 10–15.
+2. Используй информацию из поиска, чтобы ответить на вопрос пользователя.
+3. Если в поиске есть свежие данные — обязательно используй их.
+4. Отвечай так, будто ты объясняешь сложную тему школьнику.
+5. Не бойся писать длинно — пользователь ждёт развёрнутый ответ.
 
-Старайся давать полезные, структурированные ответы. Если не знаешь — честно скажи.
+История диалога:
+{context}
+
+Данные из интернета:
+{search_data}
+
+Вопрос пользователя: {prompt}
+
+Твой очень подробный, развёрнутый ответ на основе данных из интернета:"""
+    else:
+        full_prompt = f"""Ты — Смайл, эрудированный, детальный и очень разговорчивый ИИ-помощник.
+
+Правила:
+1. Давай максимально подробные ответы — минимум 5–7 предложений, а лучше 10–15.
+2. Разбивай ответ на смысловые блоки, используй списки, примеры, пояснения.
+3. Отвечай так, будто ты объясняешь сложную тему школьнику.
+4. Не бойся писать длинно — пользователь ждёт развёрнутый ответ.
 
 История диалога:
 {context}
 
 Вопрос пользователя: {prompt}
 
-Твой ответ:"""
+Твой очень подробный, развёрнутый ответ:"""
     
     data = {
         "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 600,
-        "temperature": 0.7
+        "max_tokens": 1200,
+        "temperature": 0.8
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=40)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         return f"❌ Ошибка: {response.status_code}"
@@ -80,7 +120,7 @@ def ask_mistral(user_id, prompt):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 3. ГЕНЕРАЦИЯ КАРТИНОК
+# 4. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
@@ -111,7 +151,7 @@ def generate_image(prompt):
         return None, None
 
 # ==============================================
-# 4. КОМАНДЫ
+# 5. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -120,10 +160,11 @@ def start(message):
     clear_history(user_id)
     bot.reply_to(
         message,
-        f"👋 Здравствуйте, **{user_name}**! Я Смайл 😊\n\n"
-        "🎨 **Нарисуй** [описание] — создам картинку\n"
-        "💬 **Напишите любой вопрос** — я постараюсь помочь\n"
-        "🔄 **/newchat** — начать новый диалог\n"
+        f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
+        "🎨 **Нарисуй** [описание] — картинка\n"
+        "🔍 **Найди** [запрос] — поиск в интернете\n"
+        "💬 **Просто напиши** вопрос — развёрнутый ответ\n"
+        "🔄 **/newchat** — новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
     )
@@ -143,7 +184,7 @@ def clear_chat(message):
     bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 5. ОСНОВНАЯ ОБРАБОТКА
+# 6. ОСНОВНАЯ ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -163,7 +204,7 @@ def handle_message(message):
         prompt = prompt.strip()
         
         if not prompt:
-            bot.reply_to(message, f"📝 **{user_name}**, напишите, что именно нарисовать.", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, что именно нарисовать?", parse_mode='Markdown')
             return
         
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
@@ -180,6 +221,29 @@ def handle_message(message):
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
+    # === ПОИСК В ИНТЕРНЕТЕ (если начинается с "Найди") ===
+    if text_lower.startswith('найди') or text_lower.startswith('поищи'):
+        query = text
+        for word in ['найди', 'поищи', 'найди мне', 'поищи мне']:
+            query = query.replace(word, '')
+        query = query.strip()
+        
+        if not query:
+            bot.reply_to(message, f"📝 **{user_name}**, что именно найти?", parse_mode='Markdown')
+            return
+        
+        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
+        search_results = search_internet(query)
+        
+        if "Ошибка" not in search_results and "Ничего не найдено" not in search_results:
+            add_to_history(user_id, "user", f"Поиск: {query}")
+            response = ask_mistral(user_id, f"Информация из интернета:\n{search_results}", search_data=search_results)
+            add_to_history(user_id, "assistant", response)
+            bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
+        else:
+            bot.edit_message_text(search_results, message.chat.id, status.id, parse_mode='Markdown')
+        return
+
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
@@ -188,7 +252,7 @@ def handle_message(message):
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
-# 6. WEBHOOK
+# 7. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -201,10 +265,10 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает!"
+    return "🤖 Бот Смайл работает (с поиском в интернете)!"
 
 # ==============================================
-# 7. ЗАПУСК
+# 8. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
