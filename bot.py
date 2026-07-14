@@ -5,7 +5,6 @@ import re
 import random
 import time
 from flask import Flask, request
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 MISTRAL_KEY = 'zgWg7QFAdA9NMlPjL04lwruEj1NS1NvP'
@@ -14,44 +13,88 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. MISTRAL
+# 1. ИСТОРИЯ ДИАЛОГА (ХРАНИТСЯ ВСЯ)
 # ==============================================
-def ask_mistral(prompt):
+user_history = {}
+
+def get_history(user_id):
+    if user_id not in user_history:
+        user_history[user_id] = []
+    return user_history[user_id]
+
+def add_to_history(user_id, role, text):
+    history = get_history(user_id)
+    history.append({"role": role, "content": text})
+
+def clear_history(user_id):
+    if user_id in user_history:
+        user_history[user_id] = []
+
+def get_full_context(user_id):
+    history = get_history(user_id)
+    context = ""
+    for msg in history:
+        if msg["role"] == "user":
+            context += f"Пользователь: {msg['content']}\n"
+        else:
+            context += f"Смайл: {msg['content']}\n"
+    return context
+
+# ==============================================
+# 2. MISTRAL (С ПОЛНОЙ ИСТОРИЕЙ)
+# ==============================================
+def ask_mistral(user_id, prompt):
+    context = get_full_context(user_id)
+    
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {MISTRAL_KEY}",
         "Content-Type": "application/json"
     }
+    
+    full_prompt = f"""Ты — Смайл 😊, умный и дружелюбный помощник. 
+    Вот полная история нашего диалога:
+    {context}
+    
+    Пользователь спросил: {prompt}
+    
+    Отвечай кратко, по делу, на русском языке. Если вопрос уточняющий — задай его."""
+    
     data = {
         "model": "mistral-small-latest",
-        "messages": [
-            {"role": "system", "content": "Ты — Смайл 😊, умный помощник. Отвечай кратко, по делу, на русском."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 400,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "max_tokens": 500,
         "temperature": 0.7
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
-        return f"❌ Ошибка Mistral: {response.status_code}"
+        return f"❌ Ошибка: {response.status_code}"
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 2. ГЕНЕРАЦИЯ КАРТИНОК
+# 3. РЕАЛИСТИЧНЫЕ КАРТИНКИ
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
     clean_prompt = clean_prompt.strip()
     if not clean_prompt:
         clean_prompt = "красивый пейзаж"
-    styles = ["реалистичный", "акварельный", "фэнтези", "киберпанк"]
+    
+    styles = [
+        "photorealistic, 8k, highly detailed",
+        "realistic, cinematic lighting, sharp focus",
+        "hyperrealistic, professional photography, detailed texture",
+        "realistic, natural lighting, high resolution"
+    ]
     style = random.choice(styles)
-    full_prompt = f"{clean_prompt}, {style}, высокое качество"
+    
+    full_prompt = f"{clean_prompt}, {style}"
     seed = random.randint(1, 999999)
     url = f"https://image.pollinations.ai/prompt/{full_prompt.replace(' ', '%20')}?width=1024&height=1024&seed={seed}"
+    
     try:
         response = requests.get(url, timeout=60)
         if response.status_code == 200:
@@ -63,18 +106,44 @@ def generate_image(prompt):
         return None, None
 
 # ==============================================
-# 3. КОМАНДЫ
+# 4. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
+    user_id = message.from_user.id
     user_name = message.from_user.first_name or "пользователь"
+    clear_history(user_id)
     bot.reply_to(
         message,
         f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
         "🎨 **Нарисуй** [описание] — картинка\n"
-        "🖼️ **Отправь фото** — анализ (бета)\n"
-        "🎬 **Отправь видео** — анализ (бета)\n"
+        "💬 **Просто напиши** вопрос — отвечу с учётом истории\n"
+        "🔄 **/newchat** — начать новый диалог (очистить историю)\n"
+        "🧹 **/clear** — очистить историю\n"
         "ℹ️ **/info** — обо мне",
+        parse_mode='Markdown'
+    )
+
+@bot.message_handler(commands=['newchat'])
+def new_chat(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "пользователь"
+    clear_history(user_id)
+    bot.reply_to(
+        message,
+        f"🔄 **{user_name}**, начал новый диалог! История очищена. 😊\n\n"
+        "Теперь я не помню предыдущие сообщения. Начинай!",
+        parse_mode='Markdown'
+    )
+
+@bot.message_handler(commands=['clear'])
+def clear_chat(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "пользователь"
+    clear_history(user_id)
+    bot.reply_to(
+        message,
+        f"🧹 **{user_name}**, история диалога очищена! 😊",
         parse_mode='Markdown'
     )
 
@@ -85,29 +154,19 @@ def info(message):
         "🤖 **Смайл** — ИИ-помощник\n\n"
         "🧠 **Mistral** — основной ИИ\n"
         "🎨 **Pollinations.ai** — генерация картинок\n"
+        "📝 **Бесконечная история** — помню всё\n"
+        "🔄 **/newchat** — новый диалог\n"
+        "🧹 **/clear** — очистить историю\n"
         "⚡ Бесплатно и безлимитно",
         parse_mode='Markdown'
     )
 
 # ==============================================
-# 4. ОБРАБОТКА ФОТО (ЗАГЛУШКА)
-# ==============================================
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    bot.reply_to(message, "🖼️ Фото получено! Анализ пока в разработке (бета)")
-
-# ==============================================
-# 5. ОБРАБОТКА ВИДЕО (ЗАГЛУШКА)
-# ==============================================
-@bot.message_handler(content_types=['video'])
-def handle_video(message):
-    bot.reply_to(message, "🎬 Видео получено! Анализ пока в разработке (бета)")
-
-# ==============================================
-# 6. ОСНОВНАЯ ОБРАБОТКА ТЕКСТА
+# 5. ОСНОВНАЯ ОБРАБОТКА ТЕКСТА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
+    user_id = message.from_user.id
     text = message.text
     text_lower = text.lower()
     user_name = message.from_user.first_name or "пользователь"
@@ -126,6 +185,7 @@ def handle_message(message):
             bot.reply_to(message, f"📝 **{user_name}**, уточните, что нарисовать.", parse_mode='Markdown')
             return
         
+        add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
         status = bot.reply_to(message, f"🎨 Создаю: *{prompt}*...", parse_mode='Markdown')
         image_path, clean_prompt = generate_image(prompt)
         
@@ -133,18 +193,21 @@ def handle_message(message):
             with open(image_path, 'rb') as f:
                 bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готов!", parse_mode='Markdown')
             os.remove(image_path)
+            add_to_history(user_id, "assistant", f"Отправил картинку {clean_prompt}")
             bot.delete_message(message.chat.id, status.id)
         else:
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
+    add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Размышляю, **{user_name}**...")
-    response = ask_mistral(text)
+    response = ask_mistral(user_id, text)
+    add_to_history(user_id, "assistant", response)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
-# 7. WEBHOOK
+# 6. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -160,7 +223,7 @@ def index():
     return "🤖 Бот Смайл работает!"
 
 # ==============================================
-# 8. ЗАПУСК
+# 7. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
