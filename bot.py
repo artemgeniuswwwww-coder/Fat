@@ -42,15 +42,13 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. ПОИСК В ИНТЕРНЕТЕ (DUCKDUCKGO) — ИСПРАВЛЕН
+# 2. ПОИСК В ИНТЕРНЕТЕ
 # ==============================================
 def search_internet(query):
     try:
         with DDGS() as ddgs:
-            # Ищем на русском и английском
             results = list(ddgs.text(query, max_results=5, region='ru-ru'))
             if not results:
-                # Пробуем без региона
                 results = list(ddgs.text(query, max_results=5))
             if not results:
                 return None
@@ -62,12 +60,11 @@ def search_internet(query):
                 href = r.get('href', '')
                 answer += f"{i}. **{title}**\n{body}\n[Источник]({href})\n\n"
             return answer
-    except Exception as e:
-        print(f"Ошибка поиска: {e}")
+    except:
         return None
 
 # ==============================================
-# 3. MISTRAL (С УЧЁТОМ ПОИСКА)
+# 3. MISTRAL (7-8 ПРЕДЛОЖЕНИЙ)
 # ==============================================
 def ask_mistral(user_id, prompt, search_data=None):
     context = get_full_context(user_id)
@@ -79,45 +76,39 @@ def ask_mistral(user_id, prompt, search_data=None):
     }
     
     if search_data:
-        full_prompt = f"""Ты — Смайл, эрудированный, детальный и очень разговорчивый ИИ-помощник.
+        full_prompt = f"""Ты — Смайл. Отвечай развернуто, но без воды.
 
 Правила:
-1. Давай максимально подробные ответы — минимум 5–7 предложений, а лучше 10–15.
-2. Используй информацию из поиска, чтобы ответить на вопрос пользователя.
-3. Если в поиске есть свежие данные — обязательно используй их.
-4. Отвечай так, будто ты объясняешь сложную тему школьнику.
-5. Не бойся писать длинно — пользователь ждёт развёрнутый ответ.
-
-История диалога:
-{context}
+1. Отвечай ровно на 7–8 предложений.
+2. Используй информацию из поиска, если она есть.
+3. Пиши по делу, без лишних отступлений.
 
 Данные из интернета:
 {search_data}
 
 Вопрос пользователя: {prompt}
 
-Твой очень подробный, развёрнутый ответ на основе данных из интернета:"""
+Ответ (7–8 предложений):"""
     else:
-        full_prompt = f"""Ты — Смайл, эрудированный, детальный и очень разговорчивый ИИ-помощник.
+        full_prompt = f"""Ты — Смайл. Отвечай развернуто, но без воды.
 
 Правила:
-1. Давай максимально подробные ответы — минимум 5–7 предложений, а лучше 10–15.
-2. Разбивай ответ на смысловые блоки, используй списки, примеры, пояснения.
-3. Отвечай так, будто ты объясняешь сложную тему школьнику.
-4. Не бойся писать длинно — пользователь ждёт развёрнутый ответ.
+1. Отвечай ровно на 7–8 предложений.
+2. Только суть, без воды.
+3. Если не знаешь — скажи честно.
 
 История диалога:
 {context}
 
 Вопрос пользователя: {prompt}
 
-Твой очень подробный, развёрнутый ответ:"""
+Ответ (7–8 предложений):"""
     
     data = {
         "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 2000,  # Увеличен лимит
-        "temperature": 0.8
+        "max_tokens": 600,
+        "temperature": 0.7
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=50)
@@ -128,17 +119,7 @@ def ask_mistral(user_id, prompt, search_data=None):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 4. ОТПРАВКА ДЛИННЫХ СООБЩЕНИЙ
-# ==============================================
-def send_long_message(chat_id, text, parse_mode='Markdown'):
-    if len(text) <= 4096:
-        bot.send_message(chat_id, text, parse_mode=parse_mode)
-    else:
-        for i in range(0, len(text), 4096):
-            bot.send_message(chat_id, text[i:i+4096], parse_mode=parse_mode)
-
-# ==============================================
-# 5. ГЕНЕРАЦИЯ КАРТИНОК
+# 4. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
@@ -146,17 +127,10 @@ def generate_image(prompt):
     if not clean_prompt:
         clean_prompt = "красивый пейзаж"
     
-    styles = [
-        "photorealistic, 8k, highly detailed",
-        "realistic, cinematic lighting, sharp focus",
-        "hyperrealistic, professional photography, detailed texture",
-        "realistic, natural lighting, high resolution"
-    ]
+    styles = ["photorealistic, 8k, highly detailed", "realistic, cinematic lighting"]
     style = random.choice(styles)
-    
-    full_prompt = f"{clean_prompt}, {style}"
     seed = random.randint(1, 999999)
-    url = f"https://image.pollinations.ai/prompt/{full_prompt.replace(' ', '%20')}?width=1024&height=1024&seed={seed}"
+    url = f"https://image.pollinations.ai/prompt/{clean_prompt.replace(' ', '%20')}, {style}?width=1024&height=1024&seed={seed}"
     
     try:
         response = requests.get(url, timeout=60)
@@ -167,6 +141,16 @@ def generate_image(prompt):
         return None, None
     except:
         return None, None
+
+# ==============================================
+# 5. ОТПРАВКА СООБЩЕНИЙ
+# ==============================================
+def send_long_message(chat_id, text):
+    if len(text) <= 4096:
+        bot.send_message(chat_id, text, parse_mode='Markdown')
+    else:
+        for i in range(0, len(text), 4096):
+            bot.send_message(chat_id, text[i:i+4096], parse_mode='Markdown')
 
 # ==============================================
 # 6. КОМАНДЫ
@@ -181,7 +165,7 @@ def start(message):
         f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
         "🎨 **Нарисуй** [описание] — картинка\n"
         "🔍 **Найди** [запрос] — поиск в интернете\n"
-        "💬 **Просто напиши** вопрос — развёрнутый ответ\n"
+        "💬 **Просто напиши** вопрос — отвечу на 7–8 предложений\n"
         "🔄 **/newchat** — новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
@@ -222,16 +206,16 @@ def handle_message(message):
         prompt = prompt.strip()
         
         if not prompt:
-            bot.reply_to(message, f"📝 **{user_name}**, что именно нарисовать?", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, что нарисовать?", parse_mode='Markdown')
             return
         
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
-        status = bot.reply_to(message, f"🎨 Создаю: *{prompt}*...", parse_mode='Markdown')
+        status = bot.reply_to(message, f"🎨 Создаю...")
         image_path, clean_prompt = generate_image(prompt)
         
         if image_path:
             with open(image_path, 'rb') as f:
-                bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готово!", parse_mode='Markdown')
+                bot.send_photo(message.chat.id, f, caption=f"🎨 *{clean_prompt.capitalize()}* готово!")
             os.remove(image_path)
             add_to_history(user_id, "assistant", f"Отправил картинку {clean_prompt}")
             bot.delete_message(message.chat.id, status.id)
@@ -239,7 +223,7 @@ def handle_message(message):
             bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
         return
 
-    # === ПОИСК В ИНТЕРНЕТЕ ===
+    # === ПОИСК ===
     if text_lower.startswith('найди') or text_lower.startswith('поищи'):
         query = text
         for word in ['найди', 'поищи', 'найди мне', 'поищи мне']:
@@ -247,10 +231,10 @@ def handle_message(message):
         query = query.strip()
         
         if not query:
-            bot.reply_to(message, f"📝 **{user_name}**, что именно найти?", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, что найти?", parse_mode='Markdown')
             return
         
-        status = bot.reply_to(message, f"🔍 Ищу: *{query}*...", parse_mode='Markdown')
+        status = bot.reply_to(message, f"🔍 Ищу...")
         search_results = search_internet(query)
         
         if search_results:
@@ -260,7 +244,7 @@ def handle_message(message):
             bot.delete_message(message.chat.id, status.id)
             send_long_message(message.chat.id, response)
         else:
-            bot.edit_message_text("🔍 Ничего не найдено. Попробуй изменить запрос.", message.chat.id, status.id)
+            bot.edit_message_text("🔍 Ничего не найдено.", message.chat.id, status.id)
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
@@ -285,7 +269,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает (с поиском в интернете)!"
+    return "🤖 Бот Смайл работает!"
 
 # ==============================================
 # 9. ЗАПУСК
