@@ -11,7 +11,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. QWEN (1 МЛН ТОКЕНОВ/МЕС)
+# 1. QWEN
 # ==============================================
 def ask_qwen(prompt):
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
@@ -23,7 +23,7 @@ def ask_qwen(prompt):
         "model": "qwen-turbo",
         "input": {
             "messages": [
-                {"role": "system", "content": "Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском языке."},
+                {"role": "system", "content": "Ты — Смайл, дружелюбный помощник. Отвечай кратко, с эмодзи, на русском языке."},
                 {"role": "user", "content": prompt}
             ]
         },
@@ -36,9 +36,9 @@ def ask_qwen(prompt):
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             return response.json()["output"]["text"]
-        return f"❌ Ошибка Qwen: {response.status_code} - {response.text[:100]}"
+        return f"Ошибка Qwen: {response.status_code} - {response.text[:100]}"
     except Exception as e:
-        return f"😅 Ошибка: {str(e)[:100]}"
+        return f"Ошибка: {str(e)[:100]}"
 
 # ==============================================
 # 2. КАРТИНКИ
@@ -62,10 +62,9 @@ def generate_image(prompt):
 def start(message):
     bot.reply_to(
         message,
-        "👋 Привет! Я **Смайл** 🤖\n\n"
-        "🎨 **Нарисуй** [описание] – картинка\n"
-        "💬 **Просто напиши** вопрос – отвечу через Qwen\n\n"
-       
+        "Привет! Я Смайл\n\n"
+        "Нарисуй [описание] – картинка\n"
+        "Просто напиши вопрос – отвечу через Qwen",
         parse_mode='Markdown'
     )
 
@@ -78,23 +77,23 @@ def handle_message(message):
     if text_lower.startswith('нарисуй') or text_lower.startswith('сгенерируй'):
         prompt = text[7:].strip()
         if not prompt:
-            bot.reply_to(message, "📝 Что нарисовать?")
+            bot.reply_to(message, "Что нарисовать?")
             return
         
-        status = bot.reply_to(message, f"🎨 Рисую...")
+        status = bot.reply_to(message, "Рисую...")
         image_path = generate_image(prompt)
         
         if image_path:
             with open(image_path, 'rb') as f:
-                bot.send_photo(message.chat.id, f, caption=f"🖼️ {prompt}")
+                bot.send_photo(message.chat.id, f, caption=f"Картинка: {prompt}")
             os.remove(image_path)
             bot.delete_message(message.chat.id, status.id)
         else:
-            bot.edit_message_text("😅 Не удалось создать картинку.", message.chat.id, status.id)
+            bot.edit_message_text("Не удалось создать картинку.", message.chat.id, status.id)
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
-    status = bot.reply_to(message, "🤔 Думаю...")
+    status = bot.reply_to(message, "Думаю...")
     response = ask_qwen(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
@@ -112,7 +111,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "🤖 Бот Смайл работает на Qwen!"
+    return "Бот Смайл работает на Qwen!"
 
 # ==============================================
 # 5. ЗАПУСК
@@ -121,7 +120,7 @@ if __name__ == '__main__':
     bot.remove_webhook()
     webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
     bot.set_webhook(url=webhook_url)
-    print(f"✅ Вебхук установлен: {webhook_url}")
+    print(f"Webhook установлен: {webhook_url}")
     
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
