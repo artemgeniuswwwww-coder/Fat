@@ -6,37 +6,43 @@ from flask import Flask, request
 from googlesearch import search
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
-YANDEX_KEY = 'AQVN2jkFEhOY-aSEW3DbBaKjh6YcIv_ynkC5x87K'
+HF_TOKEN = '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'  # ТВОЙ ТОКЕН
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# YANDEX GPT
+# 1. HUGGING FACE С ТОКЕНОМ
 # ==============================================
-def ask_yandex(prompt):
-    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+def ask_huggingface(prompt):
+    url = "https://api-inference.huggingface.co/models/google/flan-t5-large"
+    
     headers = {
-        "Authorization": f"Api-Key {YANDEX_KEY}",
+        "Authorization": f"Bearer {HF_TOKEN}",
         "Content-Type": "application/json"
     }
     
     data = {
-        "modelUri": "gpt://latest/yandexgpt",
-        "completionOptions": {"temperature": 0.8, "maxTokens": 800},
-        "messages": [{"role": "user", "text": f"Ты — Смайл 😊, дружелюбный помощник. Отвечай кратко, с эмодзи. Вопрос: {prompt}"}]
+        "inputs": f"Ответь на русском языке кратко и дружелюбно: {prompt}",
+        "parameters": {
+            "max_length": 200,
+            "temperature": 0.7
+        }
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
-            return response.json()["result"]["alternatives"][0]["message"]["text"]
-        return f"❌ Ошибка Yandex: {response.status_code}"
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                return result[0].get("generated_text", "😅 Не удалось получить ответ")
+            return str(result)
+        return f"❌ Ошибка HF: {response.status_code}"
     except Exception as e:
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# ГЕНЕРАЦИЯ КАРТИНОК
+# 2. ГЕНЕРАЦИЯ КАРТИНОК
 # ==============================================
 def generate_image(prompt):
     try:
@@ -51,7 +57,7 @@ def generate_image(prompt):
         return None
 
 # ==============================================
-# ПОИСК В ИНТЕРНЕТЕ
+# 3. ПОИСК В ИНТЕРНЕТЕ
 # ==============================================
 def search_internet(query):
     try:
@@ -63,7 +69,7 @@ def search_internet(query):
         return f"😅 Ошибка поиска: {e}"
 
 # ==============================================
-# КОМАНДЫ БОТА
+# 4. КОМАНДЫ БОТА
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -72,7 +78,8 @@ def start(message):
         "👋 Привет! Я **Смайл** 🤖\n\n"
         "🎨 **Нарисуй** [описание] – картинка\n"
         "🔍 **Найди** [запрос] – поиск в интернете\n"
-        "💬 **Просто напиши** вопрос",
+        "💬 **Просто напиши** вопрос – отвечу через Hugging Face\n\n"
+        "⚡ Бесплатно, без лимитов!",
         parse_mode='Markdown'
     )
 
@@ -111,20 +118,20 @@ def handle_message(message):
         search_results = search_internet(query)
         
         if "Ошибка" not in search_results:
-            response = ask_yandex(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
+            response = ask_huggingface(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
         else:
-            response = ask_yandex(f"Вопрос: {query}")
+            response = ask_huggingface(f"Вопрос: {query}")
         
         bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
     status = bot.reply_to(message, "🤔 Думаю...")
-    response = ask_yandex(text)
+    response = ask_huggingface(text)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
 
 # ==============================================
-# WEBHOOK (ВМЕСТО POLLING)
+# 5. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -140,17 +147,13 @@ def index():
     return "🤖 Бот Смайл работает!"
 
 # ==============================================
-# ЗАПУСК
+# 6. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
-    # Удаляем старый вебхук
     bot.remove_webhook()
-    
-    # Ставим новый вебхук
     webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/{TOKEN}"
     bot.set_webhook(url=webhook_url)
     print(f"✅ Вебхук установлен: {webhook_url}")
     
-    # Запускаем веб-сервер
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
