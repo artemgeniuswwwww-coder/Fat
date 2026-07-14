@@ -13,7 +13,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. ИСТОРИЯ ДИАЛОГА (ХРАНИТСЯ ВСЯ)
+# 1. ИСТОРИЯ
 # ==============================================
 user_history = {}
 
@@ -41,7 +41,7 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. MISTRAL (С ПОЛНОЙ ИСТОРИЕЙ)
+# 2. MISTRAL (РАНДОМНОЕ КОВЕРКАНИЕ + БЕЗ ЛИМИТА ДЛИНЫ)
 # ==============================================
 def ask_mistral(user_id, prompt):
     context = get_full_context(user_id)
@@ -52,19 +52,38 @@ def ask_mistral(user_id, prompt):
         "Content-Type": "application/json"
     }
     
-    full_prompt = f"""Ты — Смайл 😊, умный и дружелюбный помощник. 
-    Вот полная история нашего диалога:
-    {context}
-    
-    Пользователь спросил: {prompt}
-    
-    Отвечай кратко, по делу, на русском языке. Если вопрос уточняющий — задай его."""
+    full_prompt = f"""Ты — Смайл, и ты общаешься в стиле своего создателя.
+
+Твои правила:
+1. **РАНДОМНО** коверкай слова (не всегда, а вразнобой):
+   - Иногда пиши «Што» вместо «Что»
+   - Иногда «Нэ» вместо «Нет»
+   - Иногда «Зочем» вместо «Зачем»
+   - Иногда «Абканчался» вместо «Окончался»
+   - Иногда «Наверна» вместо «Наверное»
+   - Иногда «Ща» вместо «Сейчас»
+   - Иногда «Чё» вместо «Что»
+   - Иногда вставляй «Типа» где попало
+   - Иногда начинай с «Ну», «Эм», «А»
+2. Используй **юмор и самоиронию**.
+3. Добавляй эмодзи 😭, 😂, ❤️, 😎, 👀, 🔥, 🥴 (тоже иногда).
+4. Будь **дерзким, но дружелюбным**.
+5. Можешь повторять слова для усиления (иногда).
+6. Пиши с лёгкой абсурдностью (иногда).
+7. **Длина ответа** — как хочешь: можешь ответить коротко, а можешь развернуться, если тема интересная.
+
+История диалога:
+{context}
+
+Вопрос пользователя: {prompt}
+
+Твой ответ в стиле создателя (с рандомным коверканием):"""
     
     data = {
         "model": "mistral-small-latest",
         "messages": [{"role": "user", "content": full_prompt}],
-        "max_tokens": 500,
-        "temperature": 0.7
+        "max_tokens": 800,  # Можно отвечать длинно
+        "temperature": 0.9
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -75,7 +94,7 @@ def ask_mistral(user_id, prompt):
         return f"😅 Ошибка: {str(e)[:100]}"
 
 # ==============================================
-# 3. РЕАЛИСТИЧНЫЕ КАРТИНКИ
+# 3. КАРТИНКИ
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
@@ -115,12 +134,11 @@ def start(message):
     clear_history(user_id)
     bot.reply_to(
         message,
-        f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
+        f"👋 Чё, **{user_name}**! Я Смайл 😎\n\n"
         "🎨 **Нарисуй** [описание] — картинка\n"
-        "💬 **Просто напиши** вопрос — отвечу с учётом истории\n"
-        "🔄 **/newchat** — начать новый диалог (очистить историю)\n"
-        "🧹 **/clear** — очистить историю\n"
-        "ℹ️ **/info** — обо мне",
+        "💬 **Просто напиши** — отвечу в твоём стиле (с коверканием)\n"
+        "🔄 **/newchat** — новый диалог\n"
+        "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
     )
 
@@ -129,40 +147,17 @@ def new_chat(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "пользователь"
     clear_history(user_id)
-    bot.reply_to(
-        message,
-        f"🔄 **{user_name}**, начал новый диалог! История очищена. 😊\n\n"
-        "Теперь я не помню предыдущие сообщения. Начинай!",
-        parse_mode='Markdown'
-    )
+    bot.reply_to(message, f"🔄 **{user_name}**, начал новый диалог! История очищена. 😊")
 
 @bot.message_handler(commands=['clear'])
 def clear_chat(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "пользователь"
     clear_history(user_id)
-    bot.reply_to(
-        message,
-        f"🧹 **{user_name}**, история диалога очищена! 😊",
-        parse_mode='Markdown'
-    )
-
-@bot.message_handler(commands=['info'])
-def info(message):
-    bot.reply_to(
-        message,
-        "🤖 **Смайл** — ИИ-помощник\n\n"
-        "🧠 **Mistral** — основной ИИ\n"
-        "🎨 **Pollinations.ai** — генерация картинок\n"
-        "📝 **Бесконечная история** — помню всё\n"
-        "🔄 **/newchat** — новый диалог\n"
-        "🧹 **/clear** — очистить историю\n"
-        "⚡ Бесплатно и безлимитно",
-        parse_mode='Markdown'
-    )
+    bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 5. ОСНОВНАЯ ОБРАБОТКА ТЕКСТА
+# 5. ОСНОВНАЯ ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -182,7 +177,7 @@ def handle_message(message):
         prompt = prompt.strip()
         
         if not prompt:
-            bot.reply_to(message, f"📝 **{user_name}**, уточните, что нарисовать.", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, чё нарисовать-то?", parse_mode='Markdown')
             return
         
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
@@ -201,7 +196,7 @@ def handle_message(message):
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
-    status = bot.reply_to(message, f"🤔 Размышляю, **{user_name}**...")
+    status = bot.reply_to(message, f"🤔 Думаю...")
     response = ask_mistral(user_id, text)
     add_to_history(user_id, "assistant", response)
     bot.edit_message_text(response, message.chat.id, status.id, parse_mode='Markdown')
