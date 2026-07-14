@@ -42,7 +42,7 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. ШУТКИ И ФАКТЫ
+# 2. ШУТКИ
 # ==============================================
 JOKES = [
     "Почему программисты не любят природу? — Слишком много багов. 🐛",
@@ -54,40 +54,10 @@ JOKES = [
     "Что такое 'баг' в программировании? — Это запланированная фича, которая работает не так, как задумано. 🪲"
 ]
 
-FACTS = [
-    "У осьминогов три сердца. 🐙",
-    "Бананы — это ягоды, а клубника — нет. 🍌",
-    "Интернет весит около 50 граммов (если взвесить все электроны). 💻",
-    "Пингвины предлагают друг другу камешки в знак любви. 🐧❤️",
-    "У кошек 32 мускула в каждом ухе. 🐱",
-    "Облака весят больше миллиона килограммов. ☁️",
-    "Сосна Мафусаил растёт уже 3000 лет. 🌲",
-    "В Шотландии есть слово 'cuddle', означающее долгий разговор у камина. 🏴󠁧󠁢󠁳󠁣󠁴󠁿",
-    "У жирафов такие же позвонки, как у людей — 7 штук. 🦒",
-    "Муравьи никогда не спят. 🐜",
-    "В Китае есть отель, полностью сделанный изо льда. ❄️",
-    "Сердце креветки находится в голове. 🦐"
-]
-
 # ==============================================
-# 3. MISTRAL (5-6 ПРЕДЛОЖЕНИЙ + ИНТЕРЕСНОСТИ)
+# 3. MISTRAL (5-6 ПРЕДЛОЖЕНИЙ, БЕЗ ФАКТОВ)
 # ==============================================
 def ask_mistral(prompt):
-    # Определяем эмоциональную окраску запроса
-    emotions = {
-        'грустно': 'Ответь с поддержкой и теплотой, добавь мотивирующую фразу.',
-        'весело': 'Ответь с юмором, поддержи позитивное настроение.',
-        'страшно': 'Ответь спокойно, добавь шутку, чтобы разрядить обстановку.',
-        'скучно': 'Ответь ярко, добавь неожиданный факт или историю.'
-    }
-    emotion_hint = ""
-    for key, value in emotions.items():
-        if key in prompt.lower():
-            emotion_hint = value
-            break
-    
-    fun_add = random.choice(FACTS)
-    
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {MISTRAL_KEY}",
@@ -95,15 +65,14 @@ def ask_mistral(prompt):
     }
     data = {
         "model": "mistral-small-latest",
-        "messages": [{"role": "user", "content": f"{prompt} (Отвечай на 5-6 предложений. Будь дружелюбным, живым, с лёгким юмором. {emotion_hint})"}],
+        "messages": [{"role": "user", "content": f"{prompt} (Отвечай на 5-6 предложений. Будь дружелюбным, живым, с лёгким юмором.)"}],
         "max_tokens": 500,
         "temperature": 0.9
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            reply = response.json()["choices"][0]["message"]["content"]
-            return f"{reply}\n\n✨ {fun_add}"
+            return response.json()["choices"][0]["message"]["content"]
         return f"❌ Ошибка Mistral: {response.status_code}"
     except Exception as e:
         return f"😅 Ошибка: {e}"
@@ -176,7 +145,6 @@ def start(message):
         "🔍 **Найди** [запрос] — поиск в интернете\n"
         "💬 **Просто напиши** вопрос — я отвечу\n"
         "😂 **/joke** — шутка\n"
-        "📚 **/fact** — случайный факт\n"
         "🔄 **/newchat** — новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
@@ -185,10 +153,6 @@ def start(message):
 @bot.message_handler(commands=['joke'])
 def joke_cmd(message):
     bot.reply_to(message, f"😂 {random.choice(JOKES)}")
-
-@bot.message_handler(commands=['fact'])
-def fact_cmd(message):
-    bot.reply_to(message, f"📚 {random.choice(FACTS)}")
 
 @bot.message_handler(commands=['newchat'])
 def new_chat(message):
