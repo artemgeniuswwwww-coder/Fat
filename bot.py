@@ -5,16 +5,44 @@ import re
 import random
 import time
 from flask import Flask, request
-from duckduckgo_search import DDGS
+from googlesearch import search
 
 TOKEN = '8926765429:AAEtCcaPz0MaolgHBv84MhOUOOH6yWYjlqk'
 MISTRAL_KEY = 'zgWg7QFAdA9NMlPjL04lwruEj1NS1NvP'
+ADMIN_ID = 8577385618
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ==============================================
-# 1. ИСТОРИЯ ДИАЛОГА
+# 1. РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
+# ==============================================
+maintenance_mode = False
+
+def is_admin(user_id):
+    return user_id == ADMIN_ID
+
+@bot.message_handler(commands=['maintenance'])
+def toggle_maintenance(message):
+    global maintenance_mode
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "⛔ У вас нет прав.")
+        return
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "📝 Использование: /maintenance on / off")
+        return
+    if args[1].lower() == 'on':
+        maintenance_mode = True
+        bot.reply_to(message, "🔧 Режим техобслуживания ВКЛЮЧЁН")
+    elif args[1].lower() == 'off':
+        maintenance_mode = False
+        bot.reply_to(message, "✅ Режим техобслуживания ВЫКЛЮЧЕН")
+    else:
+        bot.reply_to(message, "📝 Использование: /maintenance on / off")
+
+# ==============================================
+# 2. ИСТОРИЯ ДИАЛОГА
 # ==============================================
 user_history = {}
 
@@ -26,6 +54,8 @@ def get_history(user_id):
 def add_to_history(user_id, role, text):
     history = get_history(user_id)
     history.append({"role": role, "content": text})
+    if len(history) > 30:
+        history.pop(0)
 
 def clear_history(user_id):
     if user_id in user_history:
@@ -34,7 +64,7 @@ def clear_history(user_id):
 def get_full_context(user_id):
     history = get_history(user_id)
     context = ""
-    for msg in history[-10:]:
+    for msg in history:
         if msg["role"] == "user":
             context += f"Пользователь: {msg['content']}\n"
         else:
@@ -42,53 +72,73 @@ def get_full_context(user_id):
     return context
 
 # ==============================================
-# 2. ШУТКИ
+# 3. MISTRAL (БЕЗ ЛИМИТА ПО ДЛИНЕ)
 # ==============================================
-JOKES = [
-    "Почему программисты не любят природу? — Слишком много багов. 🐛",
-    "Как назвать кота, который умеет программировать? — Котлин. 🐱💻",
-    "Что сказал один алгоритм другому? — Я тебя отсортирую! 😂",
-    "Сколько нужно программистов, чтобы заменить лампочку? — Ни одного, это аппаратная проблема. 💡",
-    "Что такое идеальный код? — Тот, который никто не трогал. 😏",
-    "Почему программисты путают Хэллоуин и Рождество? — Потому что 31 окт = 25 дек. 🎃🎄",
-    "Что такое 'баг' в программировании? — Это запланированная фича, которая работает не так, как задумано. 🪲"
-]
-
-# ==============================================
-# 3. MISTRAL (5-6 ПРЕДЛОЖЕНИЙ, БЕЗ ФАКТОВ)
-# ==============================================
-def ask_mistral(prompt):
+def ask_mistral(user_id, prompt):
+    context = get_full_context(user_id)
+    
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {MISTRAL_KEY}",
         "Content-Type": "application/json"
     }
+    
+    full_prompt = f"""Ты — Смайл, и ты общаешься так же, как твой создатель.
+
+Твои правила:
+1. Отвечай **живо, дерзко, с юмором**.
+2. Используй **искажения** в стиле создателя:
+   - «Што» вместо «Что»
+   - «Нэ» вместо «Нет»
+   - «Зочем» вместо «Зачем»
+   - «Наверна» вместо «Наверное»
+   - «Ща» вместо «Сейчас»
+   - «Чё» вместо «Что»
+   - «Типа» — вставляй где попало
+   - «Ну» / «Эм» / «А» — в начале фраз
+   - НО **НИ В КОЕМ СЛУЧАЕ НЕ ПИШИ «АБКАНЧАЛСЯ»** — это слово запрещено.
+3. Добавляй эмодзи 😎, 🔥, 😂, 👀, ❤️ — но не перебарщивай.
+4. Будь **ироничным**, но не грубым.
+5. Если не знаешь — скажи честно, без воды.
+6. **ОТВЕЧАЙ НАСТОЛЬКО ПОДРОБНО, НАСКОЛЬКО НУЖНО.** Если вопрос требует длинного ответа — пиши длинно. Если короткого — коротко.
+7. **ГЛАВНОЕ — МЫСЛЬ ВСЕГДА ДОЛЖНА БЫТЬ ЗАКОНЧЕНА.** Не обрывай ответ на полуслове.
+
+История диалога:
+{context}
+
+Вопрос пользователя: {prompt}
+
+Твой ответ:"""
+    
     data = {
         "model": "mistral-small-latest",
-        "messages": [{"role": "user", "content": f"{prompt} (Отвечай на 5-6 предложений. Будь дружелюбным, живым, с лёгким юмором.)"}],
-        "max_tokens": 500,
+        "messages": [{"role": "user", "content": full_prompt}],
+        "max_tokens": 1500,  # Увеличенный лимит
         "temperature": 0.9
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=30)
+        response = requests.post(url, headers=headers, json=data, timeout=60)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
-        return f"❌ Ошибка Mistral: {response.status_code}"
+        return None
     except Exception as e:
-        return f"😅 Ошибка: {e}"
+        print(f"Ошибка Mistral: {e}")
+        return None
 
 # ==============================================
-# 4. ГЕНЕРАЦИЯ КАРТИНОК
+# 4. КАРТИНКИ
 # ==============================================
 def generate_image(prompt):
     clean_prompt = re.sub(r'^(нарисуй|сгенерируй|изобрази|покажи)\s+', '', prompt, flags=re.IGNORECASE)
     clean_prompt = clean_prompt.strip()
     if not clean_prompt:
         clean_prompt = "красивый пейзаж"
+    
     styles = ["photorealistic, 8k, highly detailed", "cinematic lighting, sharp focus"]
     style = random.choice(styles)
     seed = random.randint(1, 999999)
     url = f"https://image.pollinations.ai/prompt/{clean_prompt.replace(' ', '%20')}, {style}?width=1024&height=1024&seed={seed}"
+    
     try:
         response = requests.get(url, timeout=60)
         if response.status_code == 200:
@@ -100,28 +150,44 @@ def generate_image(prompt):
         return None, None
 
 # ==============================================
-# 5. ПОИСК В ИНТЕРНЕТЕ
+# 5. ПОИСК В GOOGLE
 # ==============================================
-def search_internet(query):
+def search_google(query):
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5, region='ru-ru'))
-            if not results:
-                results = list(ddgs.text(query, max_results=5))
-            if not results:
-                return None
-            answer = "🔍 **Результаты поиска:**\n\n"
-            for i, r in enumerate(results, 1):
-                title = r.get('title', 'Без заголовка')
-                body = r.get('body', '')
-                href = r.get('href', '')
-                answer += f"{i}. **{title}**\n{body}\n[Источник]({href})\n\n"
-            return answer
-    except:
-        return None
+        results = []
+        for url in search(query, num_results=5):
+            results.append(f"🔗 {url}")
+        return "\n".join(results) if results else "❌ Ничего не найдено"
+    except Exception as e:
+        return f"😅 Ошибка поиска: {e}"
 
 # ==============================================
-# 6. ОТПРАВКА ДЛИННЫХ СООБЩЕНИЙ
+# 6. БЕСКОНЕЧНЫЕ ШУТКИ
+# ==============================================
+def generate_joke():
+    prompt = "Придумай короткую, смешную шутку на русском языке. Шутка должна быть оригинальной, не из интернета. Отвечай только шуткой, без лишнего текста."
+    
+    url = "https://api.mistral.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {MISTRAL_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "mistral-small-latest",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 200,
+        "temperature": 1.0
+    }
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        return "Шутка не придумалась, попробуй позже 😅"
+    except Exception as e:
+        return f"Ошибка: {e}"
+
+# ==============================================
+# 7. ДЛИННЫЕ СООБЩЕНИЯ
 # ==============================================
 def send_long_message(chat_id, text):
     if len(text) <= 4096:
@@ -131,7 +197,7 @@ def send_long_message(chat_id, text):
             bot.send_message(chat_id, text[i:i+4096], parse_mode='Markdown')
 
 # ==============================================
-# 7. КОМАНДЫ
+# 8. КОМАНДЫ
 # ==============================================
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -140,11 +206,11 @@ def start(message):
     clear_history(user_id)
     bot.reply_to(
         message,
-        f"👋 Привет, **{user_name}**! Я Смайл 😊\n\n"
+        f"👋 Чё, **{user_name}**! Я Смайл 😎\n\n"
         "🎨 **Нарисуй** [описание] — картинка\n"
-        "🔍 **Найди** [запрос] — поиск в интернете\n"
-        "💬 **Просто напиши** вопрос — я отвечу\n"
-        "😂 **/joke** — шутка\n"
+        "🔍 **Найди** [запрос] — поиск в Google\n"
+        "💬 **Просто напиши** вопрос — отвечу по-своему\n"
+        "😂 **/joke** — бесконечные шутки\n"
         "🔄 **/newchat** — новый диалог\n"
         "🧹 **/clear** — очистить историю",
         parse_mode='Markdown'
@@ -152,7 +218,9 @@ def start(message):
 
 @bot.message_handler(commands=['joke'])
 def joke_cmd(message):
-    bot.reply_to(message, f"😂 {random.choice(JOKES)}")
+    status = bot.reply_to(message, "😂 Придумываю шутку...")
+    joke = generate_joke()
+    bot.edit_message_text(f"😂 {joke}", message.chat.id, status.id)
 
 @bot.message_handler(commands=['newchat'])
 def new_chat(message):
@@ -169,7 +237,7 @@ def clear_chat(message):
     bot.reply_to(message, f"🧹 **{user_name}**, история диалога очищена! 😊")
 
 # ==============================================
-# 8. ОСНОВНАЯ ОБРАБОТКА
+# 9. ОСНОВНАЯ ОБРАБОТКА
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
 def handle_message(message):
@@ -177,6 +245,10 @@ def handle_message(message):
     text = message.text
     text_lower = text.lower()
     user_name = message.from_user.first_name or "пользователь"
+
+    if maintenance_mode and not is_admin(user_id):
+        bot.reply_to(message, "🔧 Ведутся технические работы. Ведутся одним человеком, так что ожидайте.")
+        return
 
     # === КАРТИНКА ===
     draw_keywords = ['нарисуй', 'сгенерируй', 'изобрази', 'покажи']
@@ -188,7 +260,7 @@ def handle_message(message):
             prompt = re.sub(r'^' + kw + r'\s+', '', prompt, flags=re.IGNORECASE)
         prompt = prompt.strip()
         if not prompt:
-            bot.reply_to(message, f"📝 **{user_name}**, что нарисовать?", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, чё нарисовать?", parse_mode='Markdown')
             return
         add_to_history(user_id, "user", f"Попросил нарисовать: {prompt}")
         status = bot.reply_to(message, f"🎨 Рисую...")
@@ -210,30 +282,28 @@ def handle_message(message):
             query = query.replace(word, '')
         query = query.strip()
         if not query:
-            bot.reply_to(message, f"📝 **{user_name}**, что найти?", parse_mode='Markdown')
+            bot.reply_to(message, f"📝 **{user_name}**, чё найти?", parse_mode='Markdown')
             return
-        status = bot.reply_to(message, f"🔍 Ищу...")
-        search_results = search_internet(query)
-        if search_results:
-            add_to_history(user_id, "user", f"Поиск: {query}")
-            response = ask_mistral(f"Вопрос: {query}\nИнформация: {search_results}\nОтветь кратко.")
-            add_to_history(user_id, "assistant", response)
-            bot.delete_message(message.chat.id, status.id)
-            send_long_message(message.chat.id, response)
-        else:
-            bot.edit_message_text("🔍 Ничего не найдено.", message.chat.id, status.id)
+        status = bot.reply_to(message, f"🔍 Ищу в Google...")
+        search_results = search_google(query)
+        add_to_history(user_id, "user", f"Поиск: {query}")
+        add_to_history(user_id, "assistant", search_results)
+        bot.delete_message(message.chat.id, status.id)
+        send_long_message(message.chat.id, search_results)
         return
 
     # === ОБЫЧНЫЙ ОТВЕТ ===
     add_to_history(user_id, "user", text)
     status = bot.reply_to(message, f"🤔 Думаю...")
-    response = ask_mistral(text)
+    response = ask_mistral(user_id, text)
+    if response is None:
+        response = "🔧 Ведутся технические работы. Ведутся одним человеком, так что ожидайте."
     add_to_history(user_id, "assistant", response)
     bot.delete_message(message.chat.id, status.id)
     send_long_message(message.chat.id, response)
 
 # ==============================================
-# 9. WEBHOOK
+# 10. WEBHOOK
 # ==============================================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -249,7 +319,7 @@ def index():
     return "🤖 Бот Смайл работает на Mistral!"
 
 # ==============================================
-# 10. ЗАПУСК
+# 11. ЗАПУСК
 # ==============================================
 if __name__ == '__main__':
     bot.remove_webhook()
